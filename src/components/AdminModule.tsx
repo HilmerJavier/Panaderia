@@ -2,11 +2,12 @@ import React, { useState } from 'react';
 import { 
   Settings2, Plus, Edit2, Trash2, Wheat, DollarSign, 
   Layers, CheckCircle2, AlertCircle, Save, Sparkles, Image as ImageIcon,
-  Tag, Check, X
+  Tag, Check, X, Upload, Camera, Zap
 } from 'lucide-react';
 import { Producto, Insumo, RecetaItem } from '../types';
 import { api } from '../services/api';
 import { formatCOP } from '../utils/formatters';
+import { compressImageFile, optimizeExternalImageUrl, formatBytes, CompressionResult } from '../utils/imageOptimizer';
 
 interface AdminModuleProps {
   productos: Producto[];
@@ -70,6 +71,8 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
   // PRODUCT CRUD STATE
   const [showProductModal, setShowProductModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Producto | null>(null);
+  const [isOptimizingImage, setIsOptimizingImage] = useState(false);
+  const [compressionStats, setCompressionStats] = useState<CompressionResult | null>(null);
   const [prodForm, setProdForm] = useState({
     nombre: '',
     descripcion: '',
@@ -205,9 +208,34 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
   };
 
   // Product CRUD
+  const handleImageFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsOptimizingImage(true);
+      const result = await compressImageFile(file, 640, 640, 0.82);
+      setProdForm(prev => ({ ...prev, imagen_url: result.dataUrl }));
+      setCompressionStats(result);
+      setNotification({
+        type: 'success',
+        message: `Foto optimizada automáticamente: ${formatBytes(result.originalSize)} ➔ ${formatBytes(result.compressedSize)} (-${result.savedPercentage}% peso).`,
+      });
+    } catch (err: any) {
+      setNotification({
+        type: 'error',
+        message: err.message || 'Error al procesar la foto.',
+      });
+    } finally {
+      setIsOptimizingImage(false);
+      e.target.value = '';
+    }
+  };
+
   const openNewProductModal = () => {
     setEditingProduct(null);
     setInlineNewCategory(false);
+    setCompressionStats(null);
     setProdForm({
       nombre: '',
       descripcion: '',
@@ -223,6 +251,7 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
   const openEditProductModal = (prod: Producto) => {
     setEditingProduct(prod);
     setInlineNewCategory(false);
+    setCompressionStats(null);
     setProdForm({
       nombre: prod.nombre,
       descripcion: prod.descripcion || '',
@@ -241,6 +270,7 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
       const price = parseFloat(prodForm.precio);
       const stock = parseInt(prodForm.stock_disponible, 10) || 0;
       const catToSave = prodForm.categoria.trim() || 'Pan Rústico';
+      const finalImageUrl = optimizeExternalImageUrl(prodForm.imagen_url);
       await api.addCategoria(catToSave);
 
       if (editingProduct) {
@@ -249,7 +279,7 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
           descripcion: prodForm.descripcion,
           precio: price,
           categoria: catToSave,
-          imagen_url: prodForm.imagen_url,
+          imagen_url: finalImageUrl,
           stock_disponible: stock,
           activo: prodForm.activo,
         });
@@ -260,7 +290,7 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
           descripcion: prodForm.descripcion,
           precio: price,
           categoria: catToSave,
-          imagen_url: prodForm.imagen_url,
+          imagen_url: finalImageUrl,
           stock_disponible: stock,
           activo: prodForm.activo,
         });
@@ -269,6 +299,7 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
 
       setShowProductModal(false);
       setInlineNewCategory(false);
+      setCompressionStats(null);
       onRefreshAll();
     } catch (err: any) {
       setNotification({ type: 'error', message: err.message || 'Error al guardar producto' });
@@ -1054,30 +1085,80 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                 />
               </div>
 
-              {/* Photo selector (Preset or URL) */}
-              <div>
-                <label className="block font-semibold text-stone-700 mb-1">Fotografía del Pan:</label>
-                <div className="grid grid-cols-4 gap-2 mb-2">
-                  {PRESET_IMAGES.map((img, i) => (
-                    <div
-                      key={i}
-                      onClick={() => setProdForm({ ...prodForm, imagen_url: img.url })}
-                      className={`aspect-4/3 rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${
-                        prodForm.imagen_url === img.url
-                          ? 'border-orange-500 ring-2 ring-orange-500/20'
-                          : 'border-transparent opacity-70 hover:opacity-100'
-                      }`}
-                    >
-                      <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
-                    </div>
-                  ))}
+              {/* Photo selector (Preset, Upload, or URL) */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block font-semibold text-stone-700">Fotografía del Pan:</label>
+                  <span className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
+                    <Zap className="w-3 h-3 text-amber-500" />
+                    Optimización web automática
+                  </span>
                 </div>
+
+                {/* Subir foto propia con compresión automática */}
+                <div className="flex items-center gap-2">
+                  <label className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-amber-50 hover:bg-amber-100 border border-amber-300 border-dashed rounded-xl text-amber-900 font-semibold cursor-pointer transition-colors text-xs">
+                    <Camera className="w-4 h-4 text-amber-700" />
+                    <span>{isOptimizingImage ? 'Optimizando foto...' : '📷 Subir foto (celular o PC)'}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      disabled={isOptimizingImage}
+                      onChange={handleImageFileUpload}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                {/* Badge de compresión exitosa */}
+                {compressionStats && (
+                  <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between text-[11px] text-emerald-800">
+                    <div className="flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span>
+                        Comprimida: <strong>{formatBytes(compressionStats.originalSize)}</strong> ➔ <strong>{formatBytes(compressionStats.compressedSize)}</strong>
+                      </span>
+                    </div>
+                    <span className="font-bold bg-emerald-200/80 px-1.5 py-0.5 rounded text-[10px]">
+                      -{compressionStats.savedPercentage}% peso
+                    </span>
+                  </div>
+                )}
+
+                {/* Presets de La Estrella del Socorro */}
+                <div>
+                  <p className="text-[10px] text-stone-500 mb-1">O elige una fotografía de catálogo de La Estrella:</p>
+                  <div className="grid grid-cols-6 gap-1.5">
+                    {PRESET_IMAGES.map((img, i) => (
+                      <div
+                        key={i}
+                        onClick={() => {
+                          setProdForm({ ...prodForm, imagen_url: img.url });
+                          setCompressionStats(null);
+                        }}
+                        className={`aspect-square rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${
+                          prodForm.imagen_url === img.url
+                            ? 'border-amber-600 ring-2 ring-amber-500/20'
+                            : 'border-transparent opacity-65 hover:opacity-100'
+                        }`}
+                        title={img.name}
+                      >
+                        <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* URL manual */}
                 <input
                   type="text"
                   value={prodForm.imagen_url}
-                  onChange={e => setProdForm({ ...prodForm, imagen_url: e.target.value })}
-                  placeholder="O ingresa la URL de la imagen"
-                  className="w-full px-3 py-1.5 bg-stone-50 border border-stone-200 rounded-xl text-[11px]"
+                  onChange={e => {
+                    const optimized = optimizeExternalImageUrl(e.target.value);
+                    setProdForm({ ...prodForm, imagen_url: optimized });
+                  }}
+                  placeholder="O ingresa la URL de la imagen en internet"
+                  className="w-full px-3 py-1.5 bg-stone-50 border border-stone-200 rounded-xl text-[11px] text-stone-600"
                 />
               </div>
 
