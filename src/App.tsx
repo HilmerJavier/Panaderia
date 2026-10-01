@@ -7,35 +7,28 @@ import { AdminModule } from './components/AdminModule';
 import { ReceiptModal } from './components/ReceiptModal';
 import { Producto, Insumo, TicketVenta } from './types';
 import { api } from './services/api';
-import { Wheat, AlertCircle, RefreshCw } from 'lucide-react';
+import { AlertCircle, RefreshCw } from 'lucide-react';
 
 export default function App() {
   const [currentModule, setCurrentModule] = useState<'pos' | 'produccion' | 'dashboard' | 'admin'>('pos');
-  const [productos, setProductos] = useState<Producto[]>([]);
-  const [insumos, setInsumos] = useState<Insumo[]>([]);
+  const [productos, setProductos] = useState<Producto[]>(() => api.getCachedOrFallbackProductos());
+  const [insumos, setInsumos] = useState<Insumo[]>(() => api.getCachedOrFallbackInsumos());
   const [lastTicket, setLastTicket] = useState<TicketVenta | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [connectionNotice, setConnectionNotice] = useState<string | null>(null);
 
   const fetchGlobalData = async () => {
     try {
-      setLoadError(null);
-      // Clean up any stale mock localStorage from previous turns to avoid cross-browser drift
-      try {
-        localStorage.removeItem('estrella_productos');
-        localStorage.removeItem('estrella_insumos');
-        localStorage.removeItem('estrella_ventas');
-      } catch {}
-
       const [prods, ins] = await Promise.all([
         api.getProductos(true),
         api.getInsumos(),
       ]);
       setProductos(prods);
       setInsumos(ins);
+      setConnectionNotice(null);
     } catch (err: any) {
-      console.error('Error cargando datos principales:', err);
-      setLoadError('No se pudo conectar con el servidor de la panadería. Asegúrate de que el backend esté ejecutándose.');
+      console.warn('Aviso de conexión al servidor central:', err);
+      setConnectionNotice('Operando en modo de respaldo local. Los cambios del catálogo se sincronizarán al reconectar.');
     } finally {
       setIsLoading(false);
     }
@@ -60,63 +53,54 @@ export default function App() {
         cartCount={0}
       />
 
-      {/* Main Content Area */}
+      {/* Non-blocking Connection Notice Banner */}
+      {connectionNotice && (
+        <div className="bg-amber-500/10 border-b border-amber-300 text-amber-900 px-4 py-2 text-xs flex items-center justify-between transition-all">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
+            <span>{connectionNotice}</span>
+          </div>
+          <button
+            onClick={() => {
+              setIsLoading(true);
+              fetchGlobalData();
+            }}
+            disabled={isLoading}
+            className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+          >
+            <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} />
+            <span>Reconectar</span>
+          </button>
+        </div>
+      )}
+
+      {/* Main Content Area - Always accessible */}
       <main className="flex-1 flex flex-col">
-        {isLoading ? (
-          <div className="flex-1 flex flex-col items-center justify-center p-12 text-stone-500">
-            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-600 flex items-center justify-center animate-spin mb-4">
-              <Wheat className="w-6 h-6" />
-            </div>
-            <p className="font-semibold text-stone-700 text-sm">Cargando sistema de panadería...</p>
-            <p className="text-xs text-stone-400 mt-1">Conectando con base de datos relacional y recetas</p>
-          </div>
-        ) : loadError ? (
-          <div className="flex-1 flex flex-col items-center justify-center p-8 max-w-md mx-auto text-center">
-            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mb-3">
-              <AlertCircle className="w-6 h-6" />
-            </div>
-            <h3 className="font-bold text-stone-900 text-base">Error de Conexión</h3>
-            <p className="text-xs text-stone-600 mt-1 leading-relaxed">{loadError}</p>
-            <button
-              onClick={() => {
-                setIsLoading(true);
-                fetchGlobalData();
-              }}
-              className="mt-4 px-4 py-2 bg-stone-900 text-white rounded-xl text-xs font-semibold hover:bg-stone-800 transition-colors flex items-center gap-2 cursor-pointer"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Reintentar Conexión</span>
-            </button>
-          </div>
-        ) : (
-          <>
-            {currentModule === 'pos' && (
-              <POSModule
-                productos={productos}
-                onSaleComplete={handleSaleComplete}
-                onRefreshData={fetchGlobalData}
-              />
-            )}
+        {currentModule === 'pos' && (
+          <POSModule
+            productos={productos}
+            onSaleComplete={handleSaleComplete}
+            onRefreshData={fetchGlobalData}
+          />
+        )}
 
-            {currentModule === 'produccion' && (
-              <ProduccionModule
-                productos={productos}
-                onRefreshAll={fetchGlobalData}
-              />
-            )}
+        {currentModule === 'produccion' && (
+          <ProduccionModule
+            productos={productos}
+            onRefreshAll={fetchGlobalData}
+          />
+        )}
 
-            {currentModule === 'dashboard' && (
-              <DashboardModule />
-            )}
+        {currentModule === 'dashboard' && (
+          <DashboardModule />
+        )}
 
-            {currentModule === 'admin' && (
-              <AdminModule
-                productos={productos}
-                insumos={insumos}
-                onRefreshAll={fetchGlobalData}
-              />
-            )}
-          </>
+        {currentModule === 'admin' && (
+          <AdminModule
+            productos={productos}
+            insumos={insumos}
+            onRefreshAll={fetchGlobalData}
+          />
         )}
       </main>
 
@@ -131,7 +115,7 @@ export default function App() {
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>Panadería La Estrella del Socorro · Sistema de Gestión de Obrador & POS</span>
           <span className="font-mono text-amber-400/80 text-[11px]">
-            Moneda: Peso Colombiano (COP) · Base de Datos SQLite Relacional
+            Moneda: Peso Colombiano (COP) · Base de Datos en la Nube Supabase (PostgreSQL)
           </span>
         </div>
       </footer>
