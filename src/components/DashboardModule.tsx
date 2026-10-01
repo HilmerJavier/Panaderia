@@ -208,32 +208,58 @@ export const DashboardModule: React.FC<DashboardModuleProps> = () => {
 
           <div className="flex-1 flex flex-col justify-end min-h-[220px] pt-4">
             {reporte?.ventas_por_dia && reporte.ventas_por_dia.length > 0 ? (
-              <div className="flex items-end justify-between gap-2 h-44 border-b border-stone-200 pb-2">
+              <div className="flex items-end justify-around gap-2 h-48 border-b border-stone-200 pb-2">
                 {reporte.ventas_por_dia.map((dia, idx) => {
-                  const salesHeight = Math.max(14, Math.round((dia.total_dinero / maxDaySales) * 140));
-                  const costHeight = Math.max(6, Math.round((dia.costo_insumos / maxDaySales) * 140));
+                  const hasSales = dia.total_dinero > 0;
+                  const salesHeight = hasSales
+                    ? Math.max(16, Math.round((dia.total_dinero / maxDaySales) * 140))
+                    : 4;
+                  const costHeight = dia.costo_insumos > 0
+                    ? Math.max(8, Math.round((dia.costo_insumos / maxDaySales) * 140))
+                    : 4;
+
+                  // Formatear fecha amigable (ej: "Hoy", "01 Oct")
+                  const parts = dia.dia.split('-');
+                  const isToday = dia.dia === new Date().toISOString().split('T')[0];
+                  const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+                  const monthName = parts[1] ? meses[parseInt(parts[1], 10) - 1] : '';
+                  const formattedDay = isToday ? 'Hoy' : `${parts[2] || ''} ${monthName}`;
 
                   return (
-                    <div key={idx} className="flex-1 flex flex-col items-center gap-1 group">
-                      <div className="text-[10px] text-stone-500 font-mono opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                        {formatCOP(dia.total_dinero)}
+                    <div key={idx} className="flex-1 flex flex-col items-center gap-1 group relative">
+                      {/* Tooltip on hover */}
+                      <div className="text-[10px] text-stone-700 font-mono opacity-0 group-hover:opacity-100 transition-all pointer-events-none absolute -top-12 z-20 bg-stone-900 text-white px-2 py-1 rounded-md shadow-lg whitespace-nowrap">
+                        <span className="font-bold text-amber-400">{formatCOP(dia.total_dinero)}</span>
+                        {dia.costo_insumos > 0 && (
+                          <span className="text-red-300 ml-1">· Costo: {formatCOP(dia.costo_insumos)}</span>
+                        )}
+                        <span className="text-stone-400 block text-[9px]">{dia.cantidad_ventas} transac.</span>
                       </div>
-                      <div className="w-full max-w-[34px] flex items-end justify-center gap-1">
+
+                      <div className="w-full max-w-[38px] flex items-end justify-center gap-1">
                         {/* Sales bar */}
                         <div
                           style={{ height: `${salesHeight}px` }}
-                          className="w-1/2 bg-gradient-to-t from-orange-600 to-amber-400 hover:brightness-110 rounded-t-sm transition-all"
-                          title={`Ventas: ${formatCOP(dia.total_dinero)}`}
+                          className={`w-1/2 rounded-t-sm transition-all ${
+                            hasSales
+                              ? 'bg-gradient-to-t from-orange-600 to-amber-400 hover:brightness-110 shadow-xs cursor-pointer'
+                              : 'bg-stone-200'
+                          }`}
+                          title={`Ventas: ${formatCOP(dia.total_dinero)} (${dia.cantidad_ventas} ventas)`}
                         ></div>
                         {/* Cost bar */}
                         <div
                           style={{ height: `${costHeight}px` }}
-                          className="w-1/2 bg-red-400 hover:bg-red-500 rounded-t-sm transition-all"
+                          className={`w-1/2 rounded-t-sm transition-all ${
+                            dia.costo_insumos > 0
+                              ? 'bg-red-400 hover:bg-red-500 shadow-xs cursor-pointer'
+                              : 'bg-stone-200'
+                          }`}
                           title={`Costo Insumos: ${formatCOP(dia.costo_insumos)}`}
                         ></div>
                       </div>
-                      <div className="text-[10px] font-mono text-stone-600 mt-1 truncate max-w-[48px]">
-                        {dia.dia.substring(5)}
+                      <div className={`text-[10px] font-mono mt-1 truncate max-w-[54px] ${isToday ? 'font-bold text-orange-600' : 'text-stone-500'}`}>
+                        {formattedDay}
                       </div>
                     </div>
                   );

@@ -585,14 +585,15 @@ export const api = {
 
   async getDashboard(periodo: string = 'todo'): Promise<DashboardReport> {
     try {
-      const { data: ventas, error } = await supabase
+      const { data: allVentas, error } = await supabase
         .from('ventas')
         .select(`
           *,
           venta_items (*)
-        `);
+        `)
+        .order('id', { ascending: true });
 
-      if (error || !ventas || ventas.length === 0) {
+      if (error || !allVentas || allVentas.length === 0) {
         return {
           periodo,
           metricas: {
@@ -612,22 +613,56 @@ export const api = {
         };
       }
 
+      // Filtrar ventas según el período seleccionado
+      const now = new Date();
+      const getVentaDate = (v: any): string => {
+        const raw = v.fecha || v.created_at || '';
+        if (!raw) return now.toISOString().split('T')[0];
+        return raw.split('T')[0] || raw.substring(0, 10);
+      };
+
+      let ventas = allVentas;
+      if (periodo === 'hoy') {
+        const todayStr = now.toISOString().split('T')[0];
+        ventas = allVentas.filter(v => getVentaDate(v) === todayStr);
+      } else if (periodo === 'semana') {
+        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        ventas = allVentas.filter(v => getVentaDate(v) >= sevenDaysAgo);
+      } else if (periodo === 'mes') {
+        const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        ventas = allVentas.filter(v => getVentaDate(v) >= thirtyDaysAgo);
+      }
+
       let totalVentas = 0;
       let totalPanes = 0;
       let costoInsumos = 0;
       const metodosCount: Record<string, { count: number; total: number }> = {};
       const prodStats: Record<number, any> = {};
+      const dayMap: Record<string, { count: number; total: number; costo: number }> = {};
 
       for (const v of ventas) {
-        totalVentas += Number(v.total || 0);
+        const vTotal = Number(v.total || 0);
+        totalVentas += vTotal;
+
         const met = v.metodo_pago || 'Efectivo';
         if (!metodosCount[met]) metodosCount[met] = { count: 0, total: 0 };
         metodosCount[met].count += 1;
-        metodosCount[met].total += Number(v.total || 0);
+        metodosCount[met].total += vTotal;
 
+        const diaKey = getVentaDate(v);
+        if (!dayMap[diaKey]) dayMap[diaKey] = { count: 0, total: 0, costo: 0 };
+        dayMap[diaKey].count += 1;
+        dayMap[diaKey].total += vTotal;
+
+        let ventaCosto = 0;
         for (const it of v.venta_items || []) {
-          totalPanes += Number(it.cantidad || 0);
-          costoInsumos += Number(it.costo_insumos_estimado || 0);
+          const qty = Number(it.cantidad || 0);
+          const sub = Number(it.subtotal || 0);
+          const cInsumo = Number(it.costo_insumos_estimado || 0);
+
+          totalPanes += qty;
+          costoInsumos += cInsumo;
+          ventaCosto += cInsumo;
 
           if (!prodStats[it.producto_id]) {
             prodStats[it.producto_id] = {
@@ -642,11 +677,35 @@ export const api = {
               margen_estimado: 0,
             };
           }
-          prodStats[it.producto_id].unidades_vendidas += Number(it.cantidad || 0);
-          prodStats[it.producto_id].ingresos_generados += Number(it.subtotal || 0);
-          prodStats[it.producto_id].costo_insumos_acumulado += Number(it.costo_insumos_estimado || 0);
+          prodStats[it.producto_id].unidades_vendidas += qty;
+          prodStats[it.producto_id].ingresos_generados += sub;
+          prodStats[it.producto_id].costo_insumos_acumulado += cInsumo;
+        }
+
+        dayMap[diaKey].costo += ventaCosto;
+      }
+
+      // Si el filtro es 'semana' o si hay pocos días registrados, asegurar que el eje X muestre contexto temporal continuo
+      const todayStr = now.toISOString().split('T')[0];
+      if (periodo === 'semana' || Object.keys(dayMap).length <= 2) {
+        // Asegurar últimos 5 días en el gráfico para que la comparativa dinámica sea visible y estética
+        for (let i = 4; i >= 0; i--) {
+          const dStr = new Date(now.getTime() - i * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+          if (!dayMap[dStr]) {
+            dayMap[dStr] = { count: 0, total: 0, costo: 0 };
+          }
         }
       }
+
+      const ventasPorDia = Object.entries(dayMap)
+        .map(([dia, dat]) => ({
+          dia,
+          cantidad_ventas: dat.count,
+          total_dinero: dat.total,
+          costo_insumos: dat.costo,
+          ganancia: dat.total - dat.costo,
+        }))
+        .sort((a, b) => a.dia.localeCompare(b.dia));
 
       const ganancia = totalVentas - costoInsumos;
       const margen = totalVentas > 0 ? (ganancia / totalVentas) * 100 : 0;
@@ -682,7 +741,7 @@ export const api = {
           total_merma: 0,
         },
         top_productos: topProds,
-        ventas_por_dia: [],
+        ventas_por_dia: ventasPorDia,
         metodos_pago: metodosArr,
       };
     } catch {

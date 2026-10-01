@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   Settings2, Plus, Edit2, Trash2, Wheat, DollarSign, 
   Layers, CheckCircle2, AlertCircle, Save, Sparkles, Image as ImageIcon,
-  Tag, Check, X, Upload, Camera, Zap
+  Tag, Check, X, Upload, Camera, Zap, Coffee
 } from 'lucide-react';
 import { Producto, Insumo, RecetaItem } from '../types';
 import { api } from '../services/api';
@@ -954,9 +954,9 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                     )}
                   </div>
 
-                  {/* Lista de panes asociados */}
+                  {/* Lista de productos asociados */}
                   <div className="pt-2 border-t border-stone-200/60">
-                    <p className="text-[11px] text-stone-500 font-medium mb-1.5">Panes en esta sección:</p>
+                    <p className="text-[11px] text-stone-500 font-medium mb-1.5">Productos en esta sección:</p>
                     {panes.length > 0 ? (
                       <div className="flex flex-wrap gap-1.5">
                         {panes.map(p => (
@@ -964,13 +964,17 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                             key={p.id}
                             className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 bg-white border border-stone-200 rounded-md text-stone-700 font-medium"
                           >
-                            <Wheat className="w-3 h-3 text-amber-600" />
+                            {/bebida|café|cafe|jugo|refresco|gaseosa|agua|te|té|chocolate/i.test(p.categoria || '') ? (
+                              <Coffee className="w-3 h-3 text-amber-700" />
+                            ) : (
+                              <Wheat className="w-3 h-3 text-amber-600" />
+                            )}
                             {p.nombre}
                           </span>
                         ))}
                       </div>
                     ) : (
-                      <p className="text-[11px] text-stone-400 italic">No hay panes asignados a esta categoría todavía.</p>
+                      <p className="text-[11px] text-stone-400 italic">No hay productos asignados a esta categoría todavía.</p>
                     )}
                   </div>
                 </div>

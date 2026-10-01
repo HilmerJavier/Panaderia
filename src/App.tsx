@@ -10,12 +10,34 @@ import { api } from './services/api';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 
 export default function App() {
-  const [currentModule, setCurrentModule] = useState<'pos' | 'produccion' | 'dashboard' | 'admin'>('pos');
+  const [currentModule, setCurrentModule] = useState<'pos' | 'produccion' | 'dashboard' | 'admin'>(() => {
+    try {
+      const saved = localStorage.getItem('estrella_active_module');
+      if (saved && ['pos', 'produccion', 'dashboard', 'admin'].includes(saved)) {
+        return saved as any;
+      }
+    } catch {}
+    return 'pos';
+  });
+
   const [productos, setProductos] = useState<Producto[]>(() => api.getCachedOrFallbackProductos());
   const [insumos, setInsumos] = useState<Insumo[]>(() => api.getCachedOrFallbackInsumos());
-  const [lastTicket, setLastTicket] = useState<TicketVenta | null>(null);
+  const [lastTicket, setLastTicket] = useState<TicketVenta | null>(() => {
+    try {
+      const saved = localStorage.getItem('estrella_last_ticket');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return null;
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [connectionNotice, setConnectionNotice] = useState<string | null>(null);
+
+  const handleModuleChange = (mod: 'pos' | 'produccion' | 'dashboard' | 'admin') => {
+    setCurrentModule(mod);
+    try {
+      localStorage.setItem('estrella_active_module', mod);
+    } catch {}
+  };
 
   const fetchGlobalData = async () => {
     try {
@@ -40,6 +62,9 @@ export default function App() {
 
   const handleSaleComplete = (ticket: TicketVenta) => {
     setLastTicket(ticket);
+    try {
+      localStorage.setItem('estrella_last_ticket', JSON.stringify(ticket));
+    } catch {}
     fetchGlobalData();
   };
 
@@ -49,7 +74,7 @@ export default function App() {
       {/* Universal Top Bar */}
       <Navbar
         currentModule={currentModule}
-        onChangeModule={setCurrentModule}
+        onChangeModule={handleModuleChange}
         cartCount={0}
       />
 

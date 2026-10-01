@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Search, Plus, Minus, Trash2, CreditCard, Banknote, ArrowRightLeft, 
-  Check, AlertCircle, ShoppingBag, Wheat, Sparkles
+  Check, AlertCircle, ShoppingBag, Wheat, Sparkles, Coffee, RefreshCw, ShieldCheck
 } from 'lucide-react';
 import { Producto, CartItem, TicketVenta } from '../types';
 import { api } from '../services/api';
@@ -18,31 +18,144 @@ export const POSModule: React.FC<POSModuleProps> = ({
   onSaleComplete,
   onRefreshData,
 }) => {
-  const [cart, setCart] = useState<CartItem[]>([]);
+  // PERSISTENCIA DEL CARRITO Y PEDIDO EN CURSO: Si el usuario refresca la página, se recupera intacto.
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('estrella_pos_cart');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return [];
+  });
+
   const [searchQuery, setSearchQuery] = useState('');
+  // Departamento principal por defecto: 'panes' (Panadería). NUNCA mezcla bebidas con panes por defecto.
+  const [activeDepartment, setActiveDepartment] = useState<'panes' | 'bebidas' | 'todos'>('panes');
   const [selectedCategory, setSelectedCategory] = useState('Todos');
-  const [paymentMethod, setPaymentMethod] = useState<'Efectivo' | 'Tarjeta' | 'Transferencia'>('Efectivo');
-  const [applyTax, setApplyTax] = useState(false);
-  const [cashTendered, setCashTendered] = useState<string>('');
+
+  const [paymentMethod, setPaymentMethod] = useState<'Efectivo' | 'Tarjeta' | 'Transferencia'>(() => {
+    try {
+      const saved = localStorage.getItem('estrella_pos_payment_method');
+      if (saved && ['Efectivo', 'Tarjeta', 'Transferencia'].includes(saved)) {
+        return saved as any;
+      }
+    } catch {}
+    return 'Efectivo';
+  });
+
+  const [applyTax, setApplyTax] = useState(() => {
+    try {
+      return localStorage.getItem('estrella_pos_apply_tax') === 'true';
+    } catch {}
+    return false;
+  });
+
+  const [cashTendered, setCashTendered] = useState<string>(() => {
+    try {
+      return localStorage.getItem('estrella_pos_cash_tendered') || '';
+    } catch {}
+    return '';
+  });
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Extract categories
-  const categories = useMemo(() => {
+  // Guardar en localStorage automáticamente al modificar el carrito o método de pago
+  useEffect(() => {
+    try {
+      if (cart.length > 0) {
+        localStorage.setItem('estrella_pos_cart', JSON.stringify(cart));
+      } else {
+        localStorage.removeItem('estrella_pos_cart');
+      }
+    } catch {}
+  }, [cart]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('estrella_pos_payment_method', paymentMethod);
+      localStorage.setItem('estrella_pos_apply_tax', applyTax ? 'true' : 'false');
+      if (cashTendered) {
+        localStorage.setItem('estrella_pos_cash_tendered', cashTendered);
+      } else {
+        localStorage.removeItem('estrella_pos_cash_tendered');
+      }
+    } catch {}
+  }, [paymentMethod, applyTax, cashTendered]);
+
+  // Verificar si hay un pedido anterior completado para permitir repetirlo
+  const [lastCompletedSale, setLastCompletedSale] = useState<CartItem[] | null>(() => {
+    try {
+      const s = localStorage.getItem('estrella_last_completed_sale');
+      if (s) {
+        const parsed = JSON.parse(s);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return null;
+  });
+
+  const handleRepeatLastOrder = () => {
+    if (lastCompletedSale && lastCompletedSale.length > 0) {
+      setCart(lastCompletedSale);
+      setErrorMsg(null);
+    }
+  };
+
+  // Helper para clasificar si un producto es bebida / cafetería
+  const isBeverageProduct = (p: Producto) => {
+    return /bebida|café|cafe|jugo|refresco|gaseosa|agua|te|té|chocolate|cafeteria|cafetería/i.test(p.categoria || '') ||
+           /café|cafe|tinto|jugo|gaseosa|coca|agua|chocolate caliente|cappuccino|capuchino|espresso/i.test(p.nombre || '');
+  };
+
+  // Separación nítida de inventario por departamentos
+  const breadProducts = useMemo(() => productos.filter(p => !isBeverageProduct(p)), [productos]);
+  const beverageProducts = useMemo(() => productos.filter(p => isBeverageProduct(p)), [productos]);
+
+  // Subcategorías específicas de panadería
+  const breadCategories = useMemo(() => {
+    const cats = new Set(breadProducts.map(p => p.categoria));
+    return ['Todos', ...Array.from(cats)];
+  }, [breadProducts]);
+
+  // Subcategorías específicas de bebidas
+  const beverageCategories = useMemo(() => {
+    const cats = new Set(beverageProducts.map(p => p.categoria));
+    return ['Todos', ...Array.from(cats)];
+  }, [beverageProducts]);
+
+  // Subcategorías activas según el departamento seleccionado
+  const currentSubcategories = useMemo(() => {
+    if (activeDepartment === 'panes') return breadCategories;
+    if (activeDepartment === 'bebidas') return beverageCategories;
     const cats = new Set(productos.map(p => p.categoria));
     return ['Todos', ...Array.from(cats)];
-  }, [productos]);
+  }, [activeDepartment, breadCategories, beverageCategories, productos]);
 
-  // Filtered products
+  // Productos filtrados: por defecto SOLO muestra panes sin mezclar bebidas
   const filteredProducts = useMemo(() => {
     return productos.filter(p => {
       if (p.activo === 0) return false;
+      const isBeverage = isBeverageProduct(p);
+
+      // Si el usuario escribe en el buscador, busca en todo el catálogo de forma inteligente
+      if (searchQuery.trim().length > 0) {
+        const matchSearch = p.nombre.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            p.descripcion.toLowerCase().includes(searchQuery.toLowerCase());
+        return matchSearch;
+      }
+
+      // Filtro estricto por departamento
+      if (activeDepartment === 'panes' && isBeverage) return false;
+      if (activeDepartment === 'bebidas' && !isBeverage) return false;
+
+      // Filtro de subcategoría dentro del departamento
       const matchCat = selectedCategory === 'Todos' || p.categoria === selectedCategory;
-      const matchSearch = p.nombre.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          p.descripcion.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchCat && matchSearch;
+      return matchCat;
     });
-  }, [productos, selectedCategory, searchQuery]);
+  }, [productos, activeDepartment, selectedCategory, searchQuery]);
 
   // Add product to cart by clicking on card or photo
   const addToCart = (product: Producto) => {
@@ -94,6 +207,10 @@ export const POSModule: React.FC<POSModuleProps> = ({
     setCart([]);
     setCashTendered('');
     setErrorMsg(null);
+    try {
+      localStorage.removeItem('estrella_pos_cart');
+      localStorage.removeItem('estrella_pos_cash_tendered');
+    } catch {}
   };
 
   // Calculations in Colombian Pesos
@@ -111,8 +228,10 @@ export const POSModule: React.FC<POSModuleProps> = ({
 
   const change = useMemo(() => {
     const tendered = parseFloat(cashTendered);
-    if (isNaN(tendered) || tendered < total) return 0;
-    return Math.round(tendered - total);
+    if (!isNaN(tendered) && tendered > total) {
+      return Math.round(tendered - total);
+    }
+    return 0;
   }, [cashTendered, total]);
 
   // Submit sale
@@ -146,6 +265,14 @@ export const POSModule: React.FC<POSModuleProps> = ({
 
       const result = await api.registrarVenta(payload);
       if (result.success) {
+        // Guardar el último pedido completado y su ticket para permitir repetirlo o consultarlo
+        try {
+          localStorage.setItem('estrella_last_completed_sale', JSON.stringify(cart));
+          setLastCompletedSale(cart);
+          if (result.ticket) {
+            localStorage.setItem('estrella_last_ticket', JSON.stringify(result.ticket));
+          }
+        } catch {}
         clearCart();
         onSaleComplete(result.ticket);
         onRefreshData();
@@ -162,43 +289,118 @@ export const POSModule: React.FC<POSModuleProps> = ({
       {/* LEFT: PRODUCTS CATALOG & POS GRID */}
       <div className="flex-1 flex flex-col min-w-0">
         
-        {/* Top Controls: Search and Categories */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-5">
-          <div className="relative flex-1 max-w-md">
-            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Buscar por pan (ej. Baguette, Masa Madre, Croissant)..."
-              className="w-full pl-10 pr-4 py-2 bg-white border border-stone-200 rounded-xl text-sm placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all shadow-xs"
-            />
+        {/* Top Controls: Search and Department Tabs */}
+        <div className="flex flex-col gap-3 mb-5">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            {/* Search Input */}
+            <div className="relative flex-1 max-w-md">
+              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder={
+                  activeDepartment === 'panes'
+                    ? "Buscar pan (ej. Baguette, Masa Madre, Croissant)..."
+                    : activeDepartment === 'bebidas'
+                    ? "Buscar bebida (ej. Café, Tinto, Jugo, Gaseosa)..."
+                    : "Buscar producto en todo el catálogo..."
+                }
+                className="w-full pl-10 pr-4 py-2 bg-white border border-stone-200 rounded-xl text-sm placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all shadow-xs"
+              />
+            </div>
+
+            {/* Department Switcher: Panadería (Default) vs Bebidas vs Todo */}
+            <div className="flex items-center gap-1 bg-stone-100 p-1 rounded-xl border border-stone-200 self-start sm:self-auto shrink-0">
+              <button
+                type="button"
+                onClick={() => { setActiveDepartment('panes'); setSelectedCategory('Todos'); }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  activeDepartment === 'panes'
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
+                }`}
+                title="Mostrar exclusivamente panes"
+              >
+                <Wheat className="w-3.5 h-3.5" />
+                <span>Panadería</span>
+                <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${activeDepartment === 'panes' ? 'bg-amber-700/80 text-white' : 'bg-stone-200 text-stone-600'}`}>
+                  {breadProducts.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setActiveDepartment('bebidas'); setSelectedCategory('Todos'); }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  activeDepartment === 'bebidas'
+                    ? 'bg-amber-800 text-white shadow-xs'
+                    : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
+                }`}
+                title="Mostrar exclusivamente bebidas y cafetería"
+              >
+                <Coffee className="w-3.5 h-3.5" />
+                <span>Bebidas & Cafetería</span>
+                <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${activeDepartment === 'bebidas' ? 'bg-amber-950/80 text-white' : 'bg-stone-200 text-stone-600'}`}>
+                  {beverageProducts.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setActiveDepartment('todos'); setSelectedCategory('Todos'); }}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-all cursor-pointer ${
+                  activeDepartment === 'todos'
+                    ? 'bg-stone-900 text-amber-400 font-bold shadow-xs'
+                    : 'text-stone-500 hover:text-stone-800 hover:bg-stone-200/60'
+                }`}
+                title="Ver catálogo completo"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">Ver Todo</span>
+              </button>
+            </div>
           </div>
 
-          {/* Category Tabs (Segmented filter controls) */}
-          <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-            {categories.map(cat => (
-              <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-xl transition-all whitespace-nowrap cursor-pointer ${
-                  selectedCategory === cat
-                    ? 'bg-stone-900 text-amber-400 shadow-xs font-bold border border-amber-500/30'
-                    : 'bg-white text-stone-600 border border-stone-200 hover:bg-stone-50 hover:text-stone-900'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
+          {/* Subcategory Filter Pills */}
+          {currentSubcategories.length > 2 && (
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-xs">
+              <span className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider shrink-0 mr-1">
+                Filtro:
+              </span>
+              {currentSubcategories.map(cat => (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`px-3 py-1 text-xs rounded-lg transition-all whitespace-nowrap cursor-pointer ${
+                    selectedCategory === cat
+                      ? 'bg-stone-800 text-amber-300 font-bold shadow-xs border border-stone-700'
+                      : 'bg-white text-stone-600 border border-stone-200 hover:bg-stone-50 hover:text-stone-900'
+                  }`}
+                >
+                  {cat === 'Todos' ? (activeDepartment === 'panes' ? 'Todos los panes' : activeDepartment === 'bebidas' ? 'Todas las bebidas' : 'Todo') : cat}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Product Cards Grid */}
         {filteredProducts.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center p-12 bg-white rounded-2xl border border-dashed border-stone-300 text-center">
-            <Wheat className="w-12 h-12 text-stone-300 mb-3" />
-            <p className="text-stone-700 font-semibold text-base">No se encontraron panes</p>
-            <p className="text-stone-400 text-xs mt-1">Prueba con otro término de búsqueda o categoría.</p>
+            {activeDepartment === 'bebidas' ? (
+              <>
+                <Coffee className="w-12 h-12 text-stone-300 mb-3" />
+                <p className="text-stone-700 font-semibold text-base">No hay bebidas en esta sección</p>
+                <p className="text-stone-400 text-xs mt-1">Puedes agregar café, jugos o gaseosas desde el módulo de Administración.</p>
+              </>
+            ) : (
+              <>
+                <Wheat className="w-12 h-12 text-stone-300 mb-3" />
+                <p className="text-stone-700 font-semibold text-base">No se encontraron panes</p>
+                <p className="text-stone-400 text-xs mt-1">Prueba con otro término de búsqueda o categoría.</p>
+              </>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 overflow-y-auto pr-1">
@@ -235,7 +437,11 @@ export const POSModule: React.FC<POSModuleProps> = ({
                       />
                     ) : (
                       <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-amber-50 to-orange-100 text-amber-800">
-                        <Wheat className="w-8 h-8 opacity-40" />
+                        {/bebida|café|cafe|jugo|refresco|gaseosa|agua|te|té|chocolate/i.test(product.categoria || '') ? (
+                          <Coffee className="w-8 h-8 opacity-50 text-amber-800" />
+                        ) : (
+                          <Wheat className="w-8 h-8 opacity-40 text-amber-800" />
+                        )}
                         <span className="text-[10px] uppercase font-bold tracking-wider mt-1 opacity-60">La Estrella</span>
                       </div>
                     )}
@@ -330,12 +536,34 @@ export const POSModule: React.FC<POSModuleProps> = ({
               <ShoppingBag className="w-10 h-10 stroke-[1.5] text-stone-300 mb-2" />
               <p className="font-semibold text-stone-600 text-sm">La comanda está vacía</p>
               <p className="text-xs text-stone-400 mt-1 max-w-[200px]">
-                Haz clic en la foto de cualquier pan para añadirlo a la orden.
+                Haz clic en la foto de cualquier producto para añadirlo a la orden.
               </p>
+              {lastCompletedSale && lastCompletedSale.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleRepeatLastOrder}
+                  className="mt-4 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Cargar los mismos productos de la última venta completada"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 text-amber-700" />
+                  <span>Repetir último pedido</span>
+                </button>
+              )}
             </div>
           ) : (
-            cart.map(item => (
-              <div key={item.producto.id} className="pt-3 first:pt-0 flex items-center justify-between gap-3">
+            <>
+              {/* Badge indicando protección automática contra refrescos */}
+              <div className="px-2.5 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg text-[11px] text-emerald-800 flex items-center justify-between mb-1">
+                <span className="flex items-center gap-1.5 font-medium">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  Venta protegida (se mantiene al recargar)
+                </span>
+                <span className="text-[10px] text-emerald-700 font-mono font-bold bg-emerald-200/60 px-1.5 py-0.5 rounded">
+                  {cart.reduce((sum, it) => sum + it.cantidad, 0)} u.
+                </span>
+              </div>
+              {cart.map(item => (
+                <div key={item.producto.id} className="pt-3 first:pt-0 flex items-center justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   <h5 className="font-semibold text-stone-800 text-xs truncate">
                     {item.producto.nombre}
@@ -369,7 +597,8 @@ export const POSModule: React.FC<POSModuleProps> = ({
                   {formatCOP(item.subtotal)}
                 </div>
               </div>
-            ))
+            ))}
+            </>
           )}
         </div>
 
