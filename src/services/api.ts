@@ -27,12 +27,24 @@ export const api = {
 
   // Gestión de Categorías
   getCategorias(): string[] {
-    const DEFAULT_CATS = ['Pan Rústico', 'Pan Blanco', 'Bollería / Dulce', 'Especiales'];
+    const DEFAULT_CATS = [
+      'Pan Rústico', 'Pan Blanco', 'Bollería / Dulce', 'Especiales',
+      'Bebidas Calientes', 'Bebidas Frías', 'Gaseosas y Aguas'
+    ];
     try {
       const stored = localStorage.getItem('estrella_categorias');
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Asegurar categorías base de bebidas si no existen
+          const hasBeverage = parsed.some(c => /bebida|café|cafe|jugo|gaseosa/i.test(c));
+          if (!hasBeverage) {
+            const merged = [...parsed, 'Bebidas Calientes', 'Bebidas Frías', 'Gaseosas y Aguas'];
+            localStorage.setItem('estrella_categorias', JSON.stringify(merged));
+            return merged;
+          }
+          return parsed;
+        }
       }
     } catch {}
     return DEFAULT_CATS;

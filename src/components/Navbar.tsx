@@ -19,7 +19,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentModule, onChangeModule, c
     { id: 'pos', label: 'Punto de Venta', icon: Store, badge: cartCount > 0 && currentModule !== 'pos' ? cartCount : null },
     { id: 'produccion', label: 'Producción & Insumos', icon: Wheat, badge: null },
     { id: 'dashboard', label: 'Dashboard & Reportes', icon: BarChart3, badge: null },
-    { id: 'admin', label: 'Recetas & Catálogo', icon: Settings2, badge: null },
+    { id: 'admin', label: 'Configuración', icon: Settings2, badge: null },
   ] as const;
 
   return (

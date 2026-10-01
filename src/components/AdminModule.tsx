@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   Settings2, Plus, Edit2, Trash2, Wheat, DollarSign, 
   Layers, CheckCircle2, AlertCircle, Save, Sparkles, Image as ImageIcon,
@@ -15,8 +15,8 @@ interface AdminModuleProps {
   onRefreshAll: () => void;
 }
 
-// Preset images from La Estrella del Socorro catalog
-const PRESET_IMAGES = [
+// Preset images for Panadería and Bebidas
+const PRESET_BREAD_IMAGES = [
   { name: 'Baguette Tradicional', url: '/images/pan_estrella_1.jpg' },
   { name: 'Masa Madre Campesina', url: '/images/pan_estrella_2.jpg' },
   { name: 'Croissant Mantequilla', url: '/images/pan_estrella_3.jpg' },
@@ -24,6 +24,18 @@ const PRESET_IMAGES = [
   { name: 'Pan Brioche / Blandito', url: '/images/pan_estrella_5.jpg' },
   { name: 'Pan Especial La Estrella', url: '/images/pan_estrella_6.jpg' },
 ];
+
+const PRESET_BEVERAGE_IMAGES = [
+  { name: 'Tinto Campesino / Café', url: 'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=600&auto=format&fit=crop&q=80' },
+  { name: 'Café con Leche / Capuchino', url: 'https://images.unsplash.com/photo-1534778101976-62847782c213?w=600&auto=format&fit=crop&q=80' },
+  { name: 'Chocolate Santandereano', url: 'https://images.unsplash.com/photo-1542990253-0d0f5be5f0ed?w=600&auto=format&fit=crop&q=80' },
+  { name: 'Jugo Natural de Naranja', url: 'https://images.unsplash.com/photo-1613478223719-2ab802602423?w=600&auto=format&fit=crop&q=80' },
+  { name: 'Gaseosa / Bebida Fría', url: 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?w=600&auto=format&fit=crop&q=80' },
+];
+
+const isBeverageCategory = (cat: string) => {
+  return /bebida|café|cafe|jugo|refresco|gaseosa|agua|te|té|chocolate|cafeteria|cafetería/i.test(cat || '');
+};
 
 export const AdminModule: React.FC<AdminModuleProps> = ({
   productos,
@@ -40,8 +52,34 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
     return Array.from(new Set([...base, ...fromProds]));
   });
   const [newCatInput, setNewCatInput] = useState('');
+  const [newCatSection, setNewCatSection] = useState<'panes' | 'bebidas'>('panes');
   const [editingCat, setEditingCat] = useState<{ original: string; current: string } | null>(null);
   const [inlineNewCategory, setInlineNewCategory] = useState(false);
+
+  // Clasificación por departamento
+  const breadCategories = useMemo(() => {
+    return categoriasList.filter(c => !isBeverageCategory(c));
+  }, [categoriasList]);
+
+  const beverageCategories = useMemo(() => {
+    return categoriasList.filter(c => isBeverageCategory(c));
+  }, [categoriasList]);
+
+  // PRODUCT CRUD STATE
+  const [productSection, setProductSection] = useState<'panes' | 'bebidas'>('panes');
+  const [showProductModal, setShowProductModal] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Producto | null>(null);
+  const [isOptimizingImage, setIsOptimizingImage] = useState(false);
+  const [compressionStats, setCompressionStats] = useState<CompressionResult | null>(null);
+  const [prodForm, setProdForm] = useState({
+    nombre: '',
+    descripcion: '',
+    precio: '',
+    categoria: 'Pan Rústico',
+    imagen_url: PRESET_BREAD_IMAGES[0].url,
+    stock_disponible: '25',
+    activo: 1,
+  });
 
   // Sincronizar categorías al actualizar productos
   React.useEffect(() => {
@@ -67,21 +105,6 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
     }
     setIsEditingRecipe(false);
   }, [selectedProductId, currentProduct]);
-
-  // PRODUCT CRUD STATE
-  const [showProductModal, setShowProductModal] = useState(false);
-  const [editingProduct, setEditingProduct] = useState<Producto | null>(null);
-  const [isOptimizingImage, setIsOptimizingImage] = useState(false);
-  const [compressionStats, setCompressionStats] = useState<CompressionResult | null>(null);
-  const [prodForm, setProdForm] = useState({
-    nombre: '',
-    descripcion: '',
-    precio: '',
-    categoria: 'Pan Rústico',
-    imagen_url: PRESET_IMAGES[0].url,
-    stock_disponible: '25',
-    activo: 1,
-  });
 
   // INSUMO CRUD STATE
   const [showInsumoModal, setShowInsumoModal] = useState(false);
@@ -232,17 +255,27 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
     }
   };
 
-  const openNewProductModal = () => {
+  const openNewProductModal = (section: 'panes' | 'bebidas' = 'panes') => {
     setEditingProduct(null);
+    setProductSection(section);
     setInlineNewCategory(false);
     setCompressionStats(null);
+
+    const defaultCat = section === 'bebidas'
+      ? (beverageCategories[0] || 'Bebidas Calientes')
+      : (breadCategories[0] || 'Pan Rústico');
+
+    const defaultImg = section === 'bebidas'
+      ? PRESET_BEVERAGE_IMAGES[0].url
+      : PRESET_BREAD_IMAGES[0].url;
+
     setProdForm({
       nombre: '',
       descripcion: '',
-      precio: '3500',
-      categoria: categoriasList[0] || 'Pan Rústico',
-      imagen_url: PRESET_IMAGES[0].url,
-      stock_disponible: '25',
+      precio: section === 'bebidas' ? '3000' : '3500',
+      categoria: defaultCat,
+      imagen_url: defaultImg,
+      stock_disponible: '24',
       activo: 1,
     });
     setShowProductModal(true);
@@ -250,18 +283,39 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
 
   const openEditProductModal = (prod: Producto) => {
     setEditingProduct(prod);
+    const isBev = isBeverageCategory(prod.categoria) ||
+                  /café|cafe|tinto|jugo|gaseosa|coca|agua|chocolate/i.test(prod.nombre);
+    setProductSection(isBev ? 'bebidas' : 'panes');
     setInlineNewCategory(false);
     setCompressionStats(null);
     setProdForm({
       nombre: prod.nombre,
       descripcion: prod.descripcion || '',
       precio: prod.precio.toString(),
-      categoria: prod.categoria || categoriasList[0] || 'Pan Rústico',
-      imagen_url: prod.imagen_url || PRESET_IMAGES[0].url,
+      categoria: prod.categoria || (isBev ? 'Bebidas Calientes' : 'Pan Rústico'),
+      imagen_url: prod.imagen_url || (isBev ? PRESET_BEVERAGE_IMAGES[0].url : PRESET_BREAD_IMAGES[0].url),
       stock_disponible: prod.stock_disponible.toString(),
       activo: prod.activo !== undefined ? prod.activo : 1,
     });
     setShowProductModal(true);
+  };
+
+  const switchProductSection = (section: 'panes' | 'bebidas') => {
+    setProductSection(section);
+    if (!editingProduct) {
+      const defaultCat = section === 'bebidas'
+        ? (beverageCategories[0] || 'Bebidas Calientes')
+        : (breadCategories[0] || 'Pan Rústico');
+      const defaultImg = section === 'bebidas'
+        ? PRESET_BEVERAGE_IMAGES[0].url
+        : PRESET_BREAD_IMAGES[0].url;
+
+      setProdForm(prev => ({
+        ...prev,
+        categoria: defaultCat,
+        imagen_url: defaultImg,
+      }));
+    }
   };
 
   const handleSaveProduct = async (e: React.FormEvent) => {
@@ -401,13 +455,13 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
         <div>
           <div className="flex items-center gap-2 text-xs font-bold text-orange-600 uppercase tracking-wider">
             <Settings2 className="w-4 h-4 text-orange-600" />
-            <span>Configuración & Escandallos · La Estrella del Socorro</span>
+            <span>Configuración · La Estrella del Socorro</span>
           </div>
           <h2 className="text-xl font-bold text-stone-900 font-display mt-0.5">
-            Recetas, Catálogo de Panes e Insumos (COP)
+            Recetas, Catálogo e Insumos (COP)
           </h2>
           <p className="text-xs text-stone-500 mt-1">
-            Fórmulas de panadería para el descuento automático de inventario y costo unitario en pesos colombianos.
+            Fórmulas de panadería y cafetería para el descuento automático de inventario y costo unitario en pesos colombianos.
           </p>
         </div>
 
@@ -421,7 +475,7 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                 : 'text-stone-600 hover:text-stone-900'
             }`}
           >
-            Escandallo / Recetas
+            Recetas
           </button>
           <button
             onClick={() => setActiveTab('productos')}
@@ -431,7 +485,7 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                 : 'text-stone-600 hover:text-stone-900'
             }`}
           >
-            Catálogo Panes
+            Catálogo
           </button>
           <button
             onClick={() => setActiveTab('insumos')}
@@ -441,7 +495,7 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                 : 'text-stone-600 hover:text-stone-900'
             }`}
           >
-            Gestión Insumos
+            Insumos
           </button>
           <button
             onClick={() => setActiveTab('categorias')}
@@ -674,13 +728,13 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
       {/* TAB 2: PRODUCT CRUD */}
       {activeTab === 'productos' && (
         <div className="bg-white rounded-2xl border border-stone-200 shadow-xs p-6 space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-stone-100">
             <div>
               <h3 className="font-bold text-base text-stone-900 font-display">
-                Catálogo de Panes y Pastelería
+                Catálogo de Productos (Panadería & Bebidas)
               </h3>
               <p className="text-xs text-stone-500">
-                Registra nuevos tipos de panes con precios en pesos colombianos y fotografías.
+                Registra y gestiona panes, repostería, cafés y bebidas con fotografías y precios COP.
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -693,11 +747,20 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                 <span>Gestionar Categorías</span>
               </button>
               <button
-                onClick={openNewProductModal}
-                className="flex items-center gap-1.5 px-4 py-2 bg-stone-900 text-white rounded-xl text-xs font-semibold hover:bg-stone-800 transition-colors shadow-xs cursor-pointer"
+                type="button"
+                onClick={() => openNewProductModal('panes')}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-semibold transition-colors cursor-pointer shadow-xs"
               >
-                <Plus className="w-4 h-4" />
-                <span>Nuevo Producto</span>
+                <Wheat className="w-4 h-4" />
+                <span>+ Nuevo Pan</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => openNewProductModal('bebidas')}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-stone-900 hover:bg-stone-800 text-amber-400 rounded-xl text-xs font-semibold transition-colors cursor-pointer shadow-xs"
+              >
+                <Coffee className="w-4 h-4" />
+                <span>+ Nueva Bebida</span>
               </button>
             </div>
           </div>
@@ -847,32 +910,55 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
       {/* TAB 4: GESTIÓN DE CATEGORÍAS */}
       {activeTab === 'categorias' && (
         <div className="bg-white rounded-2xl border border-stone-200 shadow-xs p-6 space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-100">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-stone-100">
             <div>
               <div className="flex items-center gap-2">
                 <Tag className="w-5 h-5 text-amber-600" />
                 <h3 className="font-bold text-base text-stone-900 font-display">
-                  Categorías del Catálogo ({categoriasList.length})
+                  Gestión de Secciones y Categorías ({categoriasList.length})
                 </h3>
               </div>
               <p className="text-xs text-stone-500 mt-1">
-                Adiciona nuevas secciones, renombra o elimina categorías. Los cambios se actualizan en tiempo real en la nube y en las pestañas del Punto de Venta (POS).
+                Organiza las categorías en las dos secciones principales: <strong>🥖 Panadería</strong> y <strong>☕ Bebidas & Cafetería</strong>. Los cambios se actualizan en el Punto de Venta.
               </p>
             </div>
 
-            {/* Quick Add Category Form */}
-            <form onSubmit={handleAddCategory} className="flex items-center gap-2">
+            {/* Quick Add Category Form with Section Selector */}
+            <form onSubmit={handleAddCategory} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <div className="flex items-center gap-1 bg-stone-100 p-1 rounded-xl border border-stone-200 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setNewCatSection('panes')}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
+                    newCatSection === 'panes' ? 'bg-amber-600 text-white shadow-xs' : 'text-stone-600 hover:text-stone-900'
+                  }`}
+                >
+                  <Wheat className="w-3 h-3" />
+                  <span>Panadería</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewCatSection('bebidas')}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
+                    newCatSection === 'bebidas' ? 'bg-amber-800 text-white shadow-xs' : 'text-stone-600 hover:text-stone-900'
+                  }`}
+                >
+                  <Coffee className="w-3 h-3" />
+                  <span>Bebidas</span>
+                </button>
+              </div>
+
               <input
                 type="text"
                 value={newCatInput}
                 onChange={e => setNewCatInput(e.target.value)}
-                placeholder="Ej: Panes Integrales, Dulces..."
-                className="px-3 py-2 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 min-w-[220px]"
+                placeholder={newCatSection === 'panes' ? "Ej. Panes Integrales, Hojaldres..." : "Ej. Jugos Naturales, Frías..."}
+                className="px-3 py-2 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 min-w-[200px]"
               />
               <button
                 type="submit"
                 disabled={!newCatInput.trim()}
-                className="flex items-center gap-1.5 px-4 py-2 bg-stone-900 hover:bg-stone-800 disabled:opacity-40 text-white rounded-xl text-xs font-semibold transition-colors cursor-pointer shadow-xs"
+                className="flex items-center justify-center gap-1.5 px-4 py-2 bg-stone-900 hover:bg-stone-800 disabled:opacity-40 text-white rounded-xl text-xs font-semibold transition-colors cursor-pointer shadow-xs shrink-0"
               >
                 <Plus className="w-4 h-4" />
                 <span>Adicionar</span>
@@ -880,106 +966,224 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
             </form>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {categoriasList.map(cat => {
-              const panes = productos.filter(p => p.categoria === cat);
-              const isEditing = editingCat?.original === cat;
+          {/* Section 1: Panadería */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-stone-900 font-bold text-sm font-display">
+                <Wheat className="w-4 h-4 text-amber-600" />
+                <span>Sección Panadería y Repostería</span>
+                <span className="text-xs font-mono font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                  {breadCategories.length} categorías
+                </span>
+              </div>
+            </div>
 
-              return (
-                <div
-                  key={cat}
-                  className="p-4 rounded-xl border border-stone-200 bg-stone-50/70 hover:bg-stone-50 transition-colors flex flex-col justify-between gap-3"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    {isEditing ? (
-                      <div className="flex items-center gap-2 flex-1">
-                        <input
-                          type="text"
-                          value={editingCat.current}
-                          onChange={e => setEditingCat({ ...editingCat, current: e.target.value })}
-                          className="flex-1 px-2.5 py-1.5 text-xs bg-white border border-amber-400 rounded-lg font-bold text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                          autoFocus
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') handleSaveRenameCategory();
-                            if (e.key === 'Escape') setEditingCat(null);
-                          }}
-                        />
-                        <button
-                          type="button"
-                          onClick={handleSaveRenameCategory}
-                          title="Guardar nombre"
-                          className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg cursor-pointer"
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setEditingCat(null)}
-                          title="Cancelar"
-                          className="p-1.5 bg-stone-200 hover:bg-stone-300 text-stone-700 rounded-lg cursor-pointer"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ) : (
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-sm text-stone-900 font-display">{cat}</span>
-                          <span className="text-[10px] px-2 py-0.5 rounded-full font-mono font-bold bg-amber-100 text-amber-800">
-                            {panes.length} {panes.length === 1 ? 'pan' : 'panes'}
-                          </span>
-                        </div>
-                      </div>
-                    )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {breadCategories.map((cat: string) => {
+                const prods = productos.filter(p => p.categoria === cat);
+                const isEditing = editingCat?.original === cat;
 
-                    {!isEditing && (
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleStartRenameCategory(cat)}
-                          title="Modificar nombre de categoría"
-                          className="p-1.5 text-stone-600 hover:text-stone-900 bg-white hover:bg-stone-100 border border-stone-200 rounded-lg transition-colors cursor-pointer"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteCategory(cat)}
-                          title="Quitar categoría"
-                          className="p-1.5 text-red-600 hover:text-red-800 bg-white hover:bg-red-50 border border-stone-200 rounded-lg transition-colors cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Lista de productos asociados */}
-                  <div className="pt-2 border-t border-stone-200/60">
-                    <p className="text-[11px] text-stone-500 font-medium mb-1.5">Productos en esta sección:</p>
-                    {panes.length > 0 ? (
-                      <div className="flex flex-wrap gap-1.5">
-                        {panes.map(p => (
-                          <span
-                            key={p.id}
-                            className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 bg-white border border-stone-200 rounded-md text-stone-700 font-medium"
+                return (
+                  <div
+                    key={cat}
+                    className="p-4 rounded-xl border border-stone-200 bg-stone-50/70 hover:bg-stone-50 transition-colors flex flex-col justify-between gap-3"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      {isEditing ? (
+                        <div className="flex items-center gap-2 flex-1">
+                          <input
+                            type="text"
+                            value={editingCat?.current || ''}
+                            onChange={e => setEditingCat(prev => prev ? { ...prev, current: e.target.value } : null)}
+                            className="flex-1 px-2.5 py-1.5 text-xs bg-white border border-amber-400 rounded-lg font-bold text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                            autoFocus
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') handleSaveRenameCategory();
+                              if (e.key === 'Escape') setEditingCat(null);
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={handleSaveRenameCategory}
+                            title="Guardar nombre"
+                            className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg cursor-pointer"
                           >
-                            {/bebida|café|cafe|jugo|refresco|gaseosa|agua|te|té|chocolate/i.test(p.categoria || '') ? (
-                              <Coffee className="w-3 h-3 text-amber-700" />
-                            ) : (
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingCat(null)}
+                            title="Cancelar"
+                            className="p-1.5 bg-stone-200 hover:bg-stone-300 text-stone-700 rounded-lg cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-sm text-stone-900 font-display">{cat}</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-mono font-bold bg-amber-100 text-amber-800">
+                              {prods.length} {prods.length === 1 ? 'producto' : 'productos'}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {!isEditing && (
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleStartRenameCategory(cat)}
+                            title="Modificar nombre"
+                            className="p-1.5 text-stone-600 hover:text-stone-900 bg-white hover:bg-stone-100 border border-stone-200 rounded-lg transition-colors cursor-pointer"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCategory(cat)}
+                            title="Eliminar categoría"
+                            className="p-1.5 text-red-600 hover:text-red-800 bg-white hover:bg-red-50 border border-stone-200 rounded-lg transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-2 border-t border-stone-200/60">
+                      <p className="text-[11px] text-stone-500 font-medium mb-1.5">Productos en esta categoría:</p>
+                      {prods.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {prods.map(p => (
+                            <span
+                              key={p.id}
+                              className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 bg-white border border-stone-200 rounded-md text-stone-700 font-medium"
+                            >
                               <Wheat className="w-3 h-3 text-amber-600" />
-                            )}
-                            {p.nombre}
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-[11px] text-stone-400 italic">No hay productos asignados a esta categoría todavía.</p>
-                    )}
+                              {p.nombre}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-stone-400 italic">No hay panes asignados a esta categoría todavía.</p>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Section 2: Bebidas & Cafetería */}
+          <div className="space-y-3 pt-4 border-t border-stone-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-stone-900 font-bold text-sm font-display">
+                <Coffee className="w-4 h-4 text-amber-800" />
+                <span>Sección Bebidas y Cafetería</span>
+                <span className="text-xs font-mono font-bold bg-amber-900 text-amber-100 px-2 py-0.5 rounded-full">
+                  {beverageCategories.length} categorías
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {beverageCategories.map((cat: string) => {
+                const prods = productos.filter(p => p.categoria === cat);
+                const isEditing = editingCat?.original === cat;
+
+                return (
+                  <div
+                    key={cat}
+                    className="p-4 rounded-xl border border-stone-200 bg-stone-50/70 hover:bg-stone-50 transition-colors flex flex-col justify-between gap-3"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      {isEditing ? (
+                        <div className="flex items-center gap-2 flex-1">
+                          <input
+                            type="text"
+                            value={editingCat?.current || ''}
+                            onChange={e => setEditingCat(prev => prev ? { ...prev, current: e.target.value } : null)}
+                            className="flex-1 px-2.5 py-1.5 text-xs bg-white border border-amber-400 rounded-lg font-bold text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                            autoFocus
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') handleSaveRenameCategory();
+                              if (e.key === 'Escape') setEditingCat(null);
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={handleSaveRenameCategory}
+                            title="Guardar nombre"
+                            className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg cursor-pointer"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingCat(null)}
+                            title="Cancelar"
+                            className="p-1.5 bg-stone-200 hover:bg-stone-300 text-stone-700 rounded-lg cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-sm text-stone-900 font-display">{cat}</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-mono font-bold bg-amber-900 text-amber-100">
+                              {prods.length} {prods.length === 1 ? 'bebida' : 'bebidas'}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {!isEditing && (
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleStartRenameCategory(cat)}
+                            title="Modificar nombre"
+                            className="p-1.5 text-stone-600 hover:text-stone-900 bg-white hover:bg-stone-100 border border-stone-200 rounded-lg transition-colors cursor-pointer"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCategory(cat)}
+                            title="Eliminar categoría"
+                            className="p-1.5 text-red-600 hover:text-red-800 bg-white hover:bg-red-50 border border-stone-200 rounded-lg transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-2 border-t border-stone-200/60">
+                      <p className="text-[11px] text-stone-500 font-medium mb-1.5">Bebidas en esta categoría:</p>
+                      {prods.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {prods.map(p => (
+                            <span
+                              key={p.id}
+                              className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 bg-white border border-stone-200 rounded-md text-stone-700 font-medium"
+                            >
+                              <Coffee className="w-3 h-3 text-amber-800" />
+                              {p.nombre}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-stone-400 italic">No hay bebidas asignadas a esta categoría todavía.</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
@@ -988,19 +1192,58 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
       {showProductModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/60 backdrop-blur-xs">
           <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-stone-200 space-y-4 max-h-[90vh] overflow-y-auto">
-            <h4 className="font-bold text-base text-stone-900 font-display">
-              {editingProduct ? 'Editar Pan' : 'Nuevo Pan en Catálogo'}
-            </h4>
+            
+            {/* Header with Section Switcher */}
+            <div className="flex flex-col gap-2 pb-2 border-b border-stone-100">
+              <h4 className="font-bold text-base text-stone-900 font-display">
+                {editingProduct 
+                  ? (productSection === 'bebidas' ? 'Editar Bebida' : 'Editar Pan')
+                  : (productSection === 'bebidas' ? 'Nueva Bebida / Cafetería' : 'Nuevo Pan en Catálogo')}
+              </h4>
+
+              {/* Switcher Sección Panadería vs Bebidas */}
+              <div className="flex items-center justify-between p-1.5 bg-stone-100 rounded-xl border border-stone-200">
+                <span className="text-[11px] font-bold text-stone-600 ml-1">Sección:</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => switchProductSection('panes')}
+                    className={`flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      productSection === 'panes'
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : 'text-stone-600 hover:text-stone-900'
+                    }`}
+                  >
+                    <Wheat className="w-3.5 h-3.5" />
+                    <span>Panadería</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => switchProductSection('bebidas')}
+                    className={`flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      productSection === 'bebidas'
+                        ? 'bg-amber-800 text-white shadow-xs'
+                        : 'text-stone-600 hover:text-stone-900'
+                    }`}
+                  >
+                    <Coffee className="w-3.5 h-3.5" />
+                    <span>Bebidas</span>
+                  </button>
+                </div>
+              </div>
+            </div>
 
             <form onSubmit={handleSaveProduct} className="space-y-3 text-xs">
               <div>
-                <label className="block font-semibold text-stone-700 mb-1">Nombre del Pan:</label>
+                <label className="block font-semibold text-stone-700 mb-1">
+                  {productSection === 'bebidas' ? 'Nombre de la Bebida:' : 'Nombre del Pan:'}
+                </label>
                 <input
                   type="text"
                   required
                   value={prodForm.nombre}
                   onChange={e => setProdForm({ ...prodForm, nombre: e.target.value })}
-                  placeholder="ej. Pan de Queso / Pandebono"
+                  placeholder={productSection === 'bebidas' ? "ej. Tinto campesino / Café con Leche" : "ej. Pan de Queso / Pandebono"}
                   className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl"
                 />
               </div>
@@ -1028,11 +1271,14 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                       onClick={() => {
                         setInlineNewCategory(!inlineNewCategory);
                         if (!inlineNewCategory) setProdForm({ ...prodForm, categoria: '' });
-                        else setProdForm({ ...prodForm, categoria: categoriasList[0] || 'Pan Rústico' });
+                        else {
+                          const cats = productSection === 'bebidas' ? beverageCategories : breadCategories;
+                          setProdForm({ ...prodForm, categoria: cats[0] || (productSection === 'bebidas' ? 'Bebidas Calientes' : 'Pan Rústico') });
+                        }
                       }}
                       className="text-[11px] text-amber-700 font-bold hover:underline cursor-pointer"
                     >
-                      {inlineNewCategory ? '← Elegir existente' : '+ Nueva sección'}
+                      {inlineNewCategory ? '← Existente' : '+ Nueva'}
                     </button>
                   </div>
 
@@ -1058,7 +1304,7 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                       }}
                       className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl"
                     >
-                      {categoriasList.map(cat => (
+                      {(productSection === 'bebidas' ? beverageCategories : breadCategories).map(cat => (
                         <option key={cat} value={cat}>{cat}</option>
                       ))}
                       <option value="__NEW__">+ Crear nueva categoría...</option>
@@ -1084,7 +1330,7 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                   rows={2}
                   value={prodForm.descripcion}
                   onChange={e => setProdForm({ ...prodForm, descripcion: e.target.value })}
-                  placeholder="Elaborado artesanalmente con fermentación lenta..."
+                  placeholder={productSection === 'bebidas' ? "Preparado fresco con café colombiano de origen..." : "Elaborado artesanalmente con fermentación lenta..."}
                   className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl"
                 />
               </div>
@@ -1092,10 +1338,12 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
               {/* Photo selector (Preset, Upload, or URL) */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="block font-semibold text-stone-700">Fotografía del Pan:</label>
+                  <label className="block font-semibold text-stone-700">
+                    {productSection === 'bebidas' ? 'Fotografía de la Bebida:' : 'Fotografía del Pan:'}
+                  </label>
                   <span className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
                     <Zap className="w-3 h-3 text-amber-500" />
-                    Optimización web automática
+                    Optimización web
                   </span>
                 </div>
 
@@ -1129,11 +1377,11 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                   </div>
                 )}
 
-                {/* Presets de La Estrella del Socorro */}
+                {/* Presets de La Estrella del Socorro según sección */}
                 <div>
-                  <p className="text-[10px] text-stone-500 mb-1">O elige una fotografía de catálogo de La Estrella:</p>
-                  <div className="grid grid-cols-6 gap-1.5">
-                    {PRESET_IMAGES.map((img, i) => (
+                  <p className="text-[10px] text-stone-500 mb-1">O elige una imagen predeterminada de catálogo:</p>
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {(productSection === 'bebidas' ? PRESET_BEVERAGE_IMAGES : PRESET_BREAD_IMAGES).map((img, i) => (
                       <div
                         key={i}
                         onClick={() => {
