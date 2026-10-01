@@ -5,6 +5,7 @@ import { ProduccionModule } from './components/ProduccionModule';
 import { DashboardModule } from './components/DashboardModule';
 import { AdminModule } from './components/AdminModule';
 import { ReceiptModal } from './components/ReceiptModal';
+import { ConnectivitySyncBar } from './components/ConnectivitySyncBar';
 import { Producto, Insumo, TicketVenta } from './types';
 import { api } from './services/api';
 import { AlertCircle, RefreshCw } from 'lucide-react';
@@ -77,6 +78,9 @@ export default function App() {
         onChangeModule={handleModuleChange}
         cartCount={0}
       />
+
+      {/* Connectivity & Offline Sync Status Bar */}
+      <ConnectivitySyncBar />
 
       {/* Non-blocking Connection Notice Banner */}
       {connectionNotice && (

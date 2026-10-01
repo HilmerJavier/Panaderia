@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ShoppingBag, Wheat, BarChart3, Settings2, Store, Menu, X } from 'lucide-react';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface NavbarProps {
   currentModule: 'pos' | 'produccion' | 'dashboard' | 'admin';
@@ -84,6 +85,8 @@ export const Navbar: React.FC<NavbarProps> = ({ currentModule, onChangeModule, c
 
         {/* Zone 3: Desktop Right Status & Action */}
         <div className="hidden lg:flex items-center gap-2.5 shrink-0">
+          <PWAInstallButton />
+
           <div className="flex items-center gap-2 text-xs text-stone-600 border border-stone-200 rounded-xl px-2.5 xl:px-3 py-1.5 bg-stone-50">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
             <span className="font-medium text-[11px] xl:text-xs">Caja 1 · El Socorro</span>

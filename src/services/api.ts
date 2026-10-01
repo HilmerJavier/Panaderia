@@ -1,6 +1,7 @@
 import { Producto, Insumo, TicketVenta, ProduccionRegistro, ContrasteInsumo, DashboardReport } from '../types';
 import { DEFAULT_PRODUCTOS, DEFAULT_INSUMOS } from './defaultCatalog';
 import { supabase } from '../lib/supabase';
+import { saveOfflineSale } from './offlineSync';
 
 export const api = {
   getCachedOrFallbackProductos(): Producto[] {
@@ -387,41 +388,94 @@ export const api = {
     const total = subtotal + impuesto;
     const ticketNum = `TK-${Date.now().toString().slice(-6)}`;
 
-    // Insertar venta
-    const { data: ventaData, error: ventaErr } = await supabase
-      .from('ventas')
-      .insert([{
-        numero_ticket: ticketNum,
-        subtotal,
-        impuesto,
-        total,
-        metodo_pago: data.metodo_pago,
-        cajero: data.cajero || 'Cajero Principal',
-      }])
-      .select()
-      .single();
+    // Try online execution with Supabase
+    if (navigator.onLine) {
+      try {
+        const { data: ventaData, error: ventaErr } = await supabase
+          .from('ventas')
+          .insert([{
+            numero_ticket: ticketNum,
+            subtotal,
+            impuesto,
+            total,
+            metodo_pago: data.metodo_pago,
+            cajero: data.cajero || 'Cajero Principal',
+          }])
+          .select()
+          .single();
 
-    if (ventaErr) throw new Error(ventaErr.message);
+        if (!ventaErr && ventaData) {
+          const itemRows = itemsCalculados.map(it => ({
+            venta_id: ventaData.id,
+            ...it,
+          }));
+          await supabase.from('venta_items').insert(itemRows);
 
-    // Insertar items de venta
-    const itemRows = itemsCalculados.map(it => ({
-      venta_id: ventaData.id,
-      ...it,
-    }));
-    await supabase.from('venta_items').insert(itemRows);
+          // Descontar stock de productos vendidos
+          for (const it of data.items) {
+            const prod = prods.find(p => p.id === it.producto_id);
+            if (prod) {
+              const nuevoStock = Math.max(0, prod.stock_disponible - it.cantidad);
+              await supabase.from('productos').update({ stock_disponible: nuevoStock }).eq('id', it.producto_id);
+            }
+          }
 
-    // Descontar stock de productos vendidos
-    for (const it of data.items) {
-      const prod = prods.find(p => p.id === it.producto_id);
-      if (prod) {
-        const nuevoStock = Math.max(0, prod.stock_disponible - it.cantidad);
-        await supabase.from('productos').update({ stock_disponible: nuevoStock }).eq('id', it.producto_id);
+          const ticket: TicketVenta = {
+            id: Number(ventaData.id),
+            codigo_ticket: ticketNum,
+            fecha: new Date().toISOString(),
+            items: itemsCalculados.map(it => ({
+              producto_id: it.producto_id,
+              nombre: it.producto_nombre,
+              cantidad: it.cantidad,
+              precio_unitario: it.precio_unitario,
+              subtotal: it.subtotal,
+            })),
+            subtotal,
+            impuesto,
+            total,
+            costo_insumos: costoTotalInsumos,
+            metodo_pago: data.metodo_pago as any,
+            cajero: data.cajero || 'Cajero Principal',
+          };
+
+          return { success: true, ticket };
+        }
+      } catch (err) {
+        console.warn('Conexión inestable con la nube. Guardando venta en cola local offline...', err);
       }
     }
 
-    const ticket: TicketVenta = {
-      id: Number(ventaData.id),
-      codigo_ticket: ticketNum,
+    // Fallback Offline: Guardar en cola local y actualizar stock en caché
+    const offlineItems = itemsCalculados.map(it => {
+      const prod = prods.find(p => p.id === it.producto_id) || {
+        id: it.producto_id,
+        nombre: it.producto_nombre,
+        precio: it.precio_unitario,
+        descripcion: '',
+        categoria: 'Pan Rústico',
+        imagen_url: '/images/pan_estrella_1.jpg',
+        stock_disponible: 100,
+        activo: 1,
+      };
+      return {
+        producto: prod,
+        cantidad: it.cantidad,
+      };
+    });
+
+    saveOfflineSale({
+      items: offlineItems as any,
+      subtotal,
+      descuento: 0,
+      total,
+      metodo_pago: data.metodo_pago as any,
+      vendedor: data.cajero || 'Cajero (Offline)',
+    });
+
+    const offlineTicket: TicketVenta = {
+      id: Date.now(),
+      codigo_ticket: `${ticketNum}-OFF`,
       fecha: new Date().toISOString(),
       items: itemsCalculados.map(it => ({
         producto_id: it.producto_id,
@@ -435,10 +489,10 @@ export const api = {
       total,
       costo_insumos: costoTotalInsumos,
       metodo_pago: data.metodo_pago as any,
-      cajero: data.cajero || 'Cajero Principal',
+      cajero: `${data.cajero || 'Cajero'} (Sin Conexión)`,
     };
 
-    return { success: true, ticket };
+    return { success: true, ticket: offlineTicket };
   },
 
   async getVentas(): Promise<any[]> {
