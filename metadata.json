@@ -1,0 +1,6 @@
+{
+  "name": "Panadería La Estrella del Socorro - Sistema de Gestión y POS",
+  "description": "Sistema integral de punto de venta, control de producción, gestión de recetas y kardex de insumos en pesos colombianos para Panadería La Estrella del Socorro.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
