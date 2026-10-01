@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { 
   Settings2, Plus, Edit2, Trash2, Wheat, DollarSign, 
-  Layers, CheckCircle2, AlertCircle, Save, Sparkles, Image as ImageIcon
+  Layers, CheckCircle2, AlertCircle, Save, Sparkles, Image as ImageIcon,
+  Tag, Check, X
 } from 'lucide-react';
 import { Producto, Insumo, RecetaItem } from '../types';
 import { api } from '../services/api';
@@ -28,8 +29,25 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
   insumos,
   onRefreshAll,
 }) => {
-  const [activeTab, setActiveTab] = useState<'recetas' | 'productos' | 'insumos'>('recetas');
+  const [activeTab, setActiveTab] = useState<'recetas' | 'productos' | 'insumos' | 'categorias'>('recetas');
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // CATEGORIES STATE
+  const [categoriasList, setCategoriasList] = useState<string[]>(() => {
+    const base = api.getCategorias();
+    const fromProds = productos.map(p => p.categoria).filter(Boolean);
+    return Array.from(new Set([...base, ...fromProds]));
+  });
+  const [newCatInput, setNewCatInput] = useState('');
+  const [editingCat, setEditingCat] = useState<{ original: string; current: string } | null>(null);
+  const [inlineNewCategory, setInlineNewCategory] = useState(false);
+
+  // Sincronizar categorías al actualizar productos
+  React.useEffect(() => {
+    const base = api.getCategorias();
+    const fromProds = productos.map(p => p.categoria).filter(Boolean);
+    setCategoriasList(Array.from(new Set([...base, ...fromProds])));
+  }, [productos]);
 
   // RECIPES TAB STATE
   const [selectedProductId, setSelectedProductId] = useState<number>(productos[0]?.id || 1);
@@ -131,14 +149,70 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
     setIsEditingRecipe(true);
   };
 
+  // Category Handlers
+  const handleAddCategory = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const clean = newCatInput.trim();
+    if (!clean) return;
+    if (categoriasList.some(c => c.toLowerCase() === clean.toLowerCase())) {
+      setNotification({ type: 'error', message: `La categoría "${clean}" ya existe.` });
+      return;
+    }
+    const updated = await api.addCategoria(clean);
+    setCategoriasList(updated);
+    setNewCatInput('');
+    setNotification({ type: 'success', message: `Categoría "${clean}" agregada con éxito.` });
+  };
+
+  const handleStartRenameCategory = (cat: string) => {
+    setEditingCat({ original: cat, current: cat });
+  };
+
+  const handleSaveRenameCategory = async () => {
+    if (!editingCat) return;
+    const clean = editingCat.current.trim();
+    if (!clean || clean === editingCat.original) {
+      setEditingCat(null);
+      return;
+    }
+    await api.renameCategoria(editingCat.original, clean);
+    setEditingCat(null);
+    onRefreshAll();
+    setNotification({
+      type: 'success',
+      message: `Categoría renombrada a "${clean}" y actualizada en todos sus panes en la nube.`,
+    });
+  };
+
+  const handleDeleteCategory = async (cat: string) => {
+    const panesEnCat = productos.filter(p => p.categoria === cat);
+    if (panesEnCat.length > 0) {
+      const confirm = window.confirm(
+        `La categoría "${cat}" tiene ${panesEnCat.length} pan(es) asignado(s):\n${panesEnCat.map(p => '• ' + p.nombre).join('\n')}\n\n¿Deseas reasignarlos a "Pan Rústico" y eliminar esta categoría?`
+      );
+      if (!confirm) return;
+    } else {
+      const confirm = window.confirm(`¿Seguro que deseas eliminar la categoría "${cat}"?`);
+      if (!confirm) return;
+    }
+
+    await api.deleteCategoria(cat, 'Pan Rústico');
+    onRefreshAll();
+    setNotification({
+      type: 'success',
+      message: `Categoría "${cat}" eliminada con éxito.`,
+    });
+  };
+
   // Product CRUD
   const openNewProductModal = () => {
     setEditingProduct(null);
+    setInlineNewCategory(false);
     setProdForm({
       nombre: '',
       descripcion: '',
       precio: '3500',
-      categoria: 'Pan Rústico',
+      categoria: categoriasList[0] || 'Pan Rústico',
       imagen_url: PRESET_IMAGES[0].url,
       stock_disponible: '25',
       activo: 1,
@@ -148,11 +222,12 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
 
   const openEditProductModal = (prod: Producto) => {
     setEditingProduct(prod);
+    setInlineNewCategory(false);
     setProdForm({
       nombre: prod.nombre,
       descripcion: prod.descripcion || '',
       precio: prod.precio.toString(),
-      categoria: prod.categoria || 'Pan Rústico',
+      categoria: prod.categoria || categoriasList[0] || 'Pan Rústico',
       imagen_url: prod.imagen_url || PRESET_IMAGES[0].url,
       stock_disponible: prod.stock_disponible.toString(),
       activo: prod.activo !== undefined ? prod.activo : 1,
@@ -165,13 +240,15 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
     try {
       const price = parseFloat(prodForm.precio);
       const stock = parseInt(prodForm.stock_disponible, 10) || 0;
+      const catToSave = prodForm.categoria.trim() || 'Pan Rústico';
+      await api.addCategoria(catToSave);
 
       if (editingProduct) {
         await api.updateProducto(editingProduct.id, {
           nombre: prodForm.nombre,
           descripcion: prodForm.descripcion,
           precio: price,
-          categoria: prodForm.categoria,
+          categoria: catToSave,
           imagen_url: prodForm.imagen_url,
           stock_disponible: stock,
           activo: prodForm.activo,
@@ -182,7 +259,7 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
           nombre: prodForm.nombre,
           descripcion: prodForm.descripcion,
           precio: price,
-          categoria: prodForm.categoria,
+          categoria: catToSave,
           imagen_url: prodForm.imagen_url,
           stock_disponible: stock,
           activo: prodForm.activo,
@@ -191,6 +268,7 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
       }
 
       setShowProductModal(false);
+      setInlineNewCategory(false);
       onRefreshAll();
     } catch (err: any) {
       setNotification({ type: 'error', message: err.message || 'Error al guardar producto' });
@@ -333,6 +411,16 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
             }`}
           >
             Gestión Insumos
+          </button>
+          <button
+            onClick={() => setActiveTab('categorias')}
+            className={`px-3 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+              activeTab === 'categorias'
+                ? 'bg-stone-900 text-amber-400 shadow-xs font-bold'
+                : 'text-stone-600 hover:text-stone-900'
+            }`}
+          >
+            Categorías
           </button>
         </div>
       </div>
@@ -564,13 +652,23 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                 Registra nuevos tipos de panes con precios en pesos colombianos y fotografías.
               </p>
             </div>
-            <button
-              onClick={openNewProductModal}
-              className="flex items-center gap-1.5 px-4 py-2 bg-stone-900 text-white rounded-xl text-xs font-semibold hover:bg-stone-800 transition-colors shadow-xs cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Nuevo Producto</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setActiveTab('categorias')}
+                className="flex items-center gap-1.5 px-3 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              >
+                <Tag className="w-3.5 h-3.5 text-amber-700" />
+                <span>Gestionar Categorías</span>
+              </button>
+              <button
+                onClick={openNewProductModal}
+                className="flex items-center gap-1.5 px-4 py-2 bg-stone-900 text-white rounded-xl text-xs font-semibold hover:bg-stone-800 transition-colors shadow-xs cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Nuevo Producto</span>
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -715,6 +813,142 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
         </div>
       )}
 
+      {/* TAB 4: GESTIÓN DE CATEGORÍAS */}
+      {activeTab === 'categorias' && (
+        <div className="bg-white rounded-2xl border border-stone-200 shadow-xs p-6 space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-100">
+            <div>
+              <div className="flex items-center gap-2">
+                <Tag className="w-5 h-5 text-amber-600" />
+                <h3 className="font-bold text-base text-stone-900 font-display">
+                  Categorías del Catálogo ({categoriasList.length})
+                </h3>
+              </div>
+              <p className="text-xs text-stone-500 mt-1">
+                Adiciona nuevas secciones, renombra o elimina categorías. Los cambios se actualizan en tiempo real en la nube y en las pestañas del Punto de Venta (POS).
+              </p>
+            </div>
+
+            {/* Quick Add Category Form */}
+            <form onSubmit={handleAddCategory} className="flex items-center gap-2">
+              <input
+                type="text"
+                value={newCatInput}
+                onChange={e => setNewCatInput(e.target.value)}
+                placeholder="Ej: Panes Integrales, Dulces..."
+                className="px-3 py-2 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 min-w-[220px]"
+              />
+              <button
+                type="submit"
+                disabled={!newCatInput.trim()}
+                className="flex items-center gap-1.5 px-4 py-2 bg-stone-900 hover:bg-stone-800 disabled:opacity-40 text-white rounded-xl text-xs font-semibold transition-colors cursor-pointer shadow-xs"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Adicionar</span>
+              </button>
+            </form>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {categoriasList.map(cat => {
+              const panes = productos.filter(p => p.categoria === cat);
+              const isEditing = editingCat?.original === cat;
+
+              return (
+                <div
+                  key={cat}
+                  className="p-4 rounded-xl border border-stone-200 bg-stone-50/70 hover:bg-stone-50 transition-colors flex flex-col justify-between gap-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    {isEditing ? (
+                      <div className="flex items-center gap-2 flex-1">
+                        <input
+                          type="text"
+                          value={editingCat.current}
+                          onChange={e => setEditingCat({ ...editingCat, current: e.target.value })}
+                          className="flex-1 px-2.5 py-1.5 text-xs bg-white border border-amber-400 rounded-lg font-bold text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                          autoFocus
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') handleSaveRenameCategory();
+                            if (e.key === 'Escape') setEditingCat(null);
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleSaveRenameCategory}
+                          title="Guardar nombre"
+                          className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg cursor-pointer"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingCat(null)}
+                          title="Cancelar"
+                          className="p-1.5 bg-stone-200 hover:bg-stone-300 text-stone-700 rounded-lg cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-sm text-stone-900 font-display">{cat}</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full font-mono font-bold bg-amber-100 text-amber-800">
+                            {panes.length} {panes.length === 1 ? 'pan' : 'panes'}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {!isEditing && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleStartRenameCategory(cat)}
+                          title="Modificar nombre de categoría"
+                          className="p-1.5 text-stone-600 hover:text-stone-900 bg-white hover:bg-stone-100 border border-stone-200 rounded-lg transition-colors cursor-pointer"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCategory(cat)}
+                          title="Quitar categoría"
+                          className="p-1.5 text-red-600 hover:text-red-800 bg-white hover:bg-red-50 border border-stone-200 rounded-lg transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Lista de panes asociados */}
+                  <div className="pt-2 border-t border-stone-200/60">
+                    <p className="text-[11px] text-stone-500 font-medium mb-1.5">Panes en esta sección:</p>
+                    {panes.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {panes.map(p => (
+                          <span
+                            key={p.id}
+                            className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 bg-white border border-stone-200 rounded-md text-stone-700 font-medium"
+                          >
+                            <Wheat className="w-3 h-3 text-amber-600" />
+                            {p.nombre}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-stone-400 italic">No hay panes asignados a esta categoría todavía.</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* MODAL: PRODUCTO (CREATE / EDIT) */}
       {showProductModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/60 backdrop-blur-xs">
@@ -752,17 +986,49 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-stone-700 mb-1">Categoría:</label>
-                  <select
-                    value={prodForm.categoria}
-                    onChange={e => setProdForm({ ...prodForm, categoria: e.target.value })}
-                    className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl"
-                  >
-                    <option value="Pan Rústico">Pan Rústico</option>
-                    <option value="Pan Blanco">Pan Blanco</option>
-                    <option value="Bollería / Dulce">Bollería / Dulce</option>
-                    <option value="Especiales">Especiales</option>
-                  </select>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-semibold text-stone-700">Categoría:</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInlineNewCategory(!inlineNewCategory);
+                        if (!inlineNewCategory) setProdForm({ ...prodForm, categoria: '' });
+                        else setProdForm({ ...prodForm, categoria: categoriasList[0] || 'Pan Rústico' });
+                      }}
+                      className="text-[11px] text-amber-700 font-bold hover:underline cursor-pointer"
+                    >
+                      {inlineNewCategory ? '← Elegir existente' : '+ Nueva sección'}
+                    </button>
+                  </div>
+
+                  {inlineNewCategory ? (
+                    <input
+                      type="text"
+                      required
+                      placeholder="Nombre de la nueva categoría..."
+                      value={prodForm.categoria}
+                      onChange={e => setProdForm({ ...prodForm, categoria: e.target.value })}
+                      className="w-full px-3 py-2 bg-stone-50 border border-amber-400 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  ) : (
+                    <select
+                      value={prodForm.categoria}
+                      onChange={e => {
+                        if (e.target.value === '__NEW__') {
+                          setInlineNewCategory(true);
+                          setProdForm({ ...prodForm, categoria: '' });
+                        } else {
+                          setProdForm({ ...prodForm, categoria: e.target.value });
+                        }
+                      }}
+                      className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl"
+                    >
+                      {categoriasList.map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                      <option value="__NEW__">+ Crear nueva categoría...</option>
+                    </select>
+                  )}
                 </div>
               </div>
 

@@ -25,6 +25,75 @@ export const api = {
     return DEFAULT_INSUMOS;
   },
 
+  // Gestión de Categorías
+  getCategorias(): string[] {
+    const DEFAULT_CATS = ['Pan Rústico', 'Pan Blanco', 'Bollería / Dulce', 'Especiales'];
+    try {
+      const stored = localStorage.getItem('estrella_categorias');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return DEFAULT_CATS;
+  },
+
+  async addCategoria(nombre: string): Promise<string[]> {
+    const clean = nombre.trim();
+    if (!clean) return this.getCategorias();
+    const current = this.getCategorias();
+    if (!current.includes(clean)) {
+      const updated = [...current, clean];
+      try {
+        localStorage.setItem('estrella_categorias', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    }
+    return current;
+  },
+
+  async renameCategoria(oldName: string, newName: string): Promise<void> {
+    const cleanNew = newName.trim();
+    if (!cleanNew || oldName === cleanNew) return;
+
+    // Actualizar en Supabase todos los productos que tengan la categoría vieja
+    try {
+      await supabase
+        .from('productos')
+        .update({ categoria: cleanNew })
+        .eq('categoria', oldName);
+    } catch (e) {
+      console.warn('Aviso al renombrar categoría en Supabase:', e);
+    }
+
+    // Actualizar en almacenamiento local
+    const current = this.getCategorias();
+    const updated = current.map(c => (c === oldName ? cleanNew : c));
+    if (!updated.includes(cleanNew)) updated.push(cleanNew);
+    try {
+      localStorage.setItem('estrella_categorias', JSON.stringify(updated));
+    } catch {}
+  },
+
+  async deleteCategoria(nombre: string, reasignarA: string = 'Pan Rústico'): Promise<void> {
+    // Reasignar productos en Supabase si existen
+    try {
+      await supabase
+        .from('productos')
+        .update({ categoria: reasignarA })
+        .eq('categoria', nombre);
+    } catch (e) {
+      console.warn('Aviso al reasignar categoría en Supabase:', e);
+    }
+
+    // Remover de almacenamiento local
+    const current = this.getCategorias();
+    const updated = current.filter(c => c !== nombre);
+    try {
+      localStorage.setItem('estrella_categorias', JSON.stringify(updated.length > 0 ? updated : ['Pan Rústico']));
+    } catch {}
+  },
+
   // Productos (Catálogo & Recetas)
   async getProductos(todos: boolean = true): Promise<Producto[]> {
     try {

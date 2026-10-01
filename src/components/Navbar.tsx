@@ -37,6 +37,9 @@ export const Navbar: React.FC<NavbarProps> = ({ currentModule, onChangeModule, c
         >
           <img
             src="/images/logo_estrella.png"
+            loading="eager"
+            decoding="async"
+            fetchPriority="high"
             onError={(e) => {
               const target = e.target as HTMLImageElement;
               if (!target.dataset.tried) {

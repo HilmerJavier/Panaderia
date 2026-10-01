@@ -202,7 +202,7 @@ export const POSModule: React.FC<POSModuleProps> = ({
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 overflow-y-auto pr-1">
-            {filteredProducts.map(product => {
+            {filteredProducts.map((product, idx) => {
               const inCartItem = cart.find(i => i.producto.id === product.id);
               return (
                 <div
@@ -216,7 +216,9 @@ export const POSModule: React.FC<POSModuleProps> = ({
                       <img
                         src={product.imagen_url.startsWith('/src/assets/images/') ? product.imagen_url.replace('/src/assets/images/', '/images/') : product.imagen_url}
                         alt={product.nombre}
-                        loading="lazy"
+                        loading={idx < 6 ? 'eager' : 'lazy'}
+                        decoding="async"
+                        fetchPriority={idx < 4 ? 'high' : 'auto'}
                         referrerPolicy="no-referrer"
                         className="w-full h-full object-cover group-hover:scale-106 transition-transform duration-300"
                         onError={(e) => {
