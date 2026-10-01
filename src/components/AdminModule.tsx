@@ -15,12 +15,12 @@ interface AdminModuleProps {
 
 // Preset images from La Estrella del Socorro catalog
 const PRESET_IMAGES = [
-  { name: 'Baguette Tradicional', url: '/src/assets/images/pan_estrella_1.jpg' },
-  { name: 'Masa Madre Campesina', url: '/src/assets/images/pan_estrella_2.jpg' },
-  { name: 'Croissant Mantequilla', url: '/src/assets/images/pan_estrella_3.jpg' },
-  { name: 'Ciabatta Rústica', url: '/src/assets/images/pan_estrella_4.jpg' },
-  { name: 'Pan Brioche / Blandito', url: '/src/assets/images/pan_estrella_5.jpg' },
-  { name: 'Pan Especial La Estrella', url: '/src/assets/images/pan_estrella_6.jpg' },
+  { name: 'Baguette Tradicional', url: '/images/pan_estrella_1.jpg' },
+  { name: 'Masa Madre Campesina', url: '/images/pan_estrella_2.jpg' },
+  { name: 'Croissant Mantequilla', url: '/images/pan_estrella_3.jpg' },
+  { name: 'Ciabatta Rústica', url: '/images/pan_estrella_4.jpg' },
+  { name: 'Pan Brioche / Blandito', url: '/images/pan_estrella_5.jpg' },
+  { name: 'Pan Especial La Estrella', url: '/images/pan_estrella_6.jpg' },
 ];
 
 export const AdminModule: React.FC<AdminModuleProps> = ({
@@ -59,6 +59,7 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
     categoria: 'Pan Rústico',
     imagen_url: PRESET_IMAGES[0].url,
     stock_disponible: '25',
+    activo: 1,
   });
 
   // INSUMO CRUD STATE
@@ -94,12 +95,13 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
         categoria: currentProduct.categoria,
         imagen_url: currentProduct.imagen_url,
         stock_disponible: currentProduct.stock_disponible,
+        activo: currentProduct.activo !== undefined ? currentProduct.activo : 1,
         ingredientes: recipeLines.filter(l => l.cantidad > 0),
       });
 
       setNotification({
         type: 'success',
-        message: `¡Receta para "${currentProduct.nombre}" actualizada exitosamente!`,
+        message: `¡Receta para "${currentProduct.nombre}" guardada permanentemente en la base de datos!`,
       });
       setIsEditingRecipe(false);
       onRefreshAll();
@@ -139,6 +141,7 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
       categoria: 'Pan Rústico',
       imagen_url: PRESET_IMAGES[0].url,
       stock_disponible: '25',
+      activo: 1,
     });
     setShowProductModal(true);
   };
@@ -152,6 +155,7 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
       categoria: prod.categoria || 'Pan Rústico',
       imagen_url: prod.imagen_url || PRESET_IMAGES[0].url,
       stock_disponible: prod.stock_disponible.toString(),
+      activo: prod.activo !== undefined ? prod.activo : 1,
     });
     setShowProductModal(true);
   };
@@ -170,8 +174,9 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
           categoria: prodForm.categoria,
           imagen_url: prodForm.imagen_url,
           stock_disponible: stock,
+          activo: prodForm.activo,
         });
-        setNotification({ type: 'success', message: 'Producto modificado con éxito.' });
+        setNotification({ type: 'success', message: 'Producto actualizado permanentemente en el catálogo.' });
       } else {
         await api.createProducto({
           nombre: prodForm.nombre,
@@ -180,14 +185,43 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
           categoria: prodForm.categoria,
           imagen_url: prodForm.imagen_url,
           stock_disponible: stock,
+          activo: prodForm.activo,
         });
-        setNotification({ type: 'success', message: 'Producto creado con éxito.' });
+        setNotification({ type: 'success', message: 'Nuevo producto creado permanentemente en el catálogo.' });
       }
 
       setShowProductModal(false);
       onRefreshAll();
     } catch (err: any) {
       setNotification({ type: 'error', message: err.message || 'Error al guardar producto' });
+    }
+  };
+
+  const handleDeleteProduct = async (prod: Producto) => {
+    if (!window.confirm(`¿Estás seguro de que deseas eliminar permanentemente el producto "${prod.nombre}" del catálogo?`)) {
+      return;
+    }
+    try {
+      await api.deleteProducto(prod.id, true);
+      setNotification({ type: 'success', message: `"${prod.nombre}" eliminado exitosamente de la base de datos.` });
+      setShowProductModal(false);
+      onRefreshAll();
+    } catch (err: any) {
+      setNotification({ type: 'error', message: err.message || 'Error al eliminar producto' });
+    }
+  };
+
+  const handleToggleProductAvailability = async (prod: Producto) => {
+    try {
+      const newStatus = prod.activo === 0 ? 1 : 0;
+      await api.updateProducto(prod.id, { activo: newStatus });
+      setNotification({
+        type: 'success',
+        message: `Estado de "${prod.nombre}" actualizado a: ${newStatus === 1 ? 'Disponible para venta' : 'Pausado/Inactivo'}.`,
+      });
+      onRefreshAll();
+    } catch (err: any) {
+      setNotification({ type: 'error', message: err.message || 'Error al cambiar disponibilidad' });
     }
   };
 
@@ -548,7 +582,22 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                 <div className="flex gap-3">
                   <div className="w-16 h-16 rounded-lg bg-stone-200 overflow-hidden shrink-0 border border-stone-300">
                     {p.imagen_url && (
-                      <img src={p.imagen_url} alt={p.nombre} className="w-full h-full object-cover" />
+                      <img
+                        src={p.imagen_url.startsWith('/src/assets/images/') ? p.imagen_url.replace('/src/assets/images/', '/images/') : p.imagen_url}
+                        alt={p.nombre}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          if (!target.dataset.tried) {
+                            target.dataset.tried = '1';
+                            if (target.src.includes('/images/')) {
+                              target.src = target.src.replace('/images/', '/src/assets/images/');
+                              return;
+                            }
+                          }
+                          target.style.display = 'none';
+                        }}
+                      />
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
@@ -562,17 +611,40 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
 
                 <div className="mt-3 pt-2.5 border-t border-stone-200 flex items-center justify-between text-xs">
                   <div>
-                    <span className="text-[10px] text-stone-400 block font-sans">Precio / Stock</span>
-                    <span className="font-bold font-mono text-stone-900">{formatCOP(p.precio)}</span>
-                    <span className="text-stone-400 font-mono ml-2">({p.stock_disponible} disp.)</span>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-bold font-mono text-stone-900 text-sm">{formatCOP(p.precio)}</span>
+                      <span className="text-stone-400 font-mono text-[11px]">({p.stock_disponible} disp.)</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleProductAvailability(p)}
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold cursor-pointer transition-colors ${
+                        p.activo === 0
+                          ? 'bg-stone-200 text-stone-600 hover:bg-stone-300'
+                          : 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                      }`}
+                      title="Clic para alternar disponibilidad en POS"
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full ${p.activo === 0 ? 'bg-stone-400' : 'bg-emerald-500'}`}></span>
+                      <span>{p.activo === 0 ? 'Pausado / Inactivo' : 'Disponible en Caja'}</span>
+                    </button>
                   </div>
-                  <button
-                    onClick={() => openEditProductModal(p)}
-                    className="p-1.5 text-stone-600 hover:text-stone-950 bg-white border border-stone-200 rounded-lg transition-colors cursor-pointer"
-                    title="Editar producto"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => openEditProductModal(p)}
+                      className="p-1.5 text-stone-600 hover:text-stone-950 bg-white border border-stone-200 hover:border-stone-400 rounded-lg transition-colors cursor-pointer"
+                      title="Editar producto"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteProduct(p)}
+                      className="p-1.5 text-red-600 hover:text-red-800 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors cursor-pointer"
+                      title="Eliminar producto permanentemente"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -743,20 +815,54 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+              {/* Availability setting */}
+              <div className="flex items-center justify-between p-3 bg-stone-50 rounded-xl border border-stone-200">
+                <div>
+                  <span className="block font-semibold text-stone-800 text-xs">Disponibilidad en Catálogo:</span>
+                  <span className="text-[11px] text-stone-500">
+                    {prodForm.activo === 1 ? 'El pan se mostrará en el Punto de Venta (POS)' : 'El pan estará pausado temporalmente'}
+                  </span>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setShowProductModal(false)}
-                  className="px-3 py-2 text-stone-600 hover:text-stone-900 cursor-pointer"
+                  onClick={() => setProdForm({ ...prodForm, activo: prodForm.activo === 1 ? 0 : 1 })}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                    prodForm.activo === 1
+                      ? 'bg-emerald-600 text-white hover:bg-emerald-500'
+                      : 'bg-stone-300 text-stone-700 hover:bg-stone-400'
+                  }`}
                 >
-                  Cancelar
+                  {prodForm.activo === 1 ? 'Disponible (Activo)' : 'Pausado (Inactivo)'}
                 </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 text-white font-bold rounded-xl shadow-xs transition-all cursor-pointer"
-                >
-                  Guardar Producto
-                </button>
+              </div>
+
+              <div className="flex items-center justify-between pt-3 border-t border-stone-100">
+                {editingProduct ? (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteProduct(editingProduct)}
+                    className="flex items-center gap-1.5 text-xs text-red-600 hover:text-red-800 font-semibold cursor-pointer px-2 py-1.5 rounded-lg hover:bg-red-50 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>Eliminar producto</span>
+                  </button>
+                ) : <div />}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowProductModal(false)}
+                    className="px-3 py-2 text-stone-600 hover:text-stone-900 cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 text-white font-bold rounded-xl shadow-xs transition-all cursor-pointer"
+                  >
+                    Guardar Producto
+                  </button>
+                </div>
               </div>
             </form>
           </div>

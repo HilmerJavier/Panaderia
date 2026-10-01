@@ -150,6 +150,18 @@ function initializeSchema(db: Database): void {
 }
 
 function seedInitialData(db: Database): void {
+  // Ensure we NEVER overwrite or duplicate products if they already exist in the database
+  try {
+    const check = db.exec('SELECT COUNT(*) FROM productos');
+    const existingCount = check[0]?.values[0]?.[0] as number;
+    if (existingCount && existingCount > 0) {
+      console.log(`✓ Base de datos ya cuenta con ${existingCount} productos. Omitiendo siembra.`);
+      return;
+    }
+  } catch {
+    // If table doesn't exist yet, proceed
+  }
+
   // Insumos base en Pesos Colombianos (COP)
   const insumos = [
     { nombre: 'Harina de Trigo Especial W300', unidad: 'kg', costo: 4200, stock: 85.0, min: 25.0 },
@@ -179,7 +191,7 @@ function seedInitialData(db: Database): void {
       descripcion: 'Corteza crujiente dorada y miga alveolada con 24h de fermentación lenta.',
       precio: 3500,
       categoria: 'Pan Rústico',
-      imagen_url: '/src/assets/images/pan_estrella_1.jpg',
+      imagen_url: '/images/pan_estrella_1.jpg',
       stock_disponible: 32,
     },
     {
@@ -187,7 +199,7 @@ function seedInitialData(db: Database): void {
       descripcion: 'Hogaza rústica 100% masa madre con greña pronunciada y acidez equilibrada.',
       precio: 15000,
       categoria: 'Especiales',
-      imagen_url: '/src/assets/images/pan_estrella_2.jpg',
+      imagen_url: '/images/pan_estrella_2.jpg',
       stock_disponible: 18,
     },
     {
@@ -195,7 +207,7 @@ function seedInitialData(db: Database): void {
       descripcion: 'Hojaldre artesanal con mantequilla pura al 82%, capas finas y esponjosas.',
       precio: 5500,
       categoria: 'Bollería / Dulce',
-      imagen_url: '/src/assets/images/pan_estrella_3.jpg',
+      imagen_url: '/images/pan_estrella_3.jpg',
       stock_disponible: 25,
     },
     {
@@ -203,7 +215,7 @@ function seedInitialData(db: Database): void {
       descripcion: 'Pan italiano de alta hidratación con aceite de oliva virgen extra y miga abierta.',
       precio: 4800,
       categoria: 'Pan Blanco',
-      imagen_url: '/src/assets/images/pan_estrella_4.jpg',
+      imagen_url: '/images/pan_estrella_4.jpg',
       stock_disponible: 22,
     },
     {
@@ -211,7 +223,7 @@ function seedInitialData(db: Database): void {
       descripcion: 'Pan suave y esponjoso dorado al huevo, ideal para sándwich y hamburguesas.',
       precio: 2500,
       categoria: 'Pan Blanco',
-      imagen_url: '/src/assets/images/pan_estrella_5.jpg',
+      imagen_url: '/images/pan_estrella_5.jpg',
       stock_disponible: 30,
     },
     {
@@ -219,7 +231,7 @@ function seedInitialData(db: Database): void {
       descripcion: 'Receta insignia con corteza caramelizada, toque de mantequilla y semillas.',
       precio: 4200,
       categoria: 'Especiales',
-      imagen_url: '/src/assets/images/pan_estrella_6.jpg',
+      imagen_url: '/images/pan_estrella_6.jpg',
       stock_disponible: 24,
     },
   ];

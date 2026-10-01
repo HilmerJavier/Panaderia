@@ -1,5 +1,13 @@
 import { Producto, Insumo, TicketVenta, ProduccionRegistro, ContrasteInsumo, DashboardReport, VentaItemDescontado } from '../types';
 
+function normalizeImageUrl(url?: string): string {
+  if (!url) return '/images/pan_estrella_1.jpg';
+  if (url.startsWith('/src/assets/images/')) {
+    return url.replace('/src/assets/images/', '/images/');
+  }
+  return url;
+}
+
 const INITIAL_INSUMOS: Insumo[] = [
   { id: 1, nombre: 'Harina de Trigo Especial W300', unidad_medida: 'kg', costo_unitario: 4200, stock_actual: 120, stock_minimo: 25, stock_inicial: 150 },
   { id: 2, nombre: 'Levadura Fresca Prensada', unidad_medida: 'kg', costo_unitario: 18000, stock_actual: 8.5, stock_minimo: 2, stock_inicial: 10 },
@@ -178,7 +186,11 @@ class LocalStore {
   }
 
   getProductos(): Producto[] {
-    return this.get<Producto[]>('productos', INITIAL_PRODUCTOS);
+    const list = this.get<Producto[]>('productos', INITIAL_PRODUCTOS);
+    return list.map(p => ({
+      ...p,
+      imagen_url: normalizeImageUrl(p.imagen_url),
+    }));
   }
 
   saveProductos(items: Producto[]): void {

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, saveDatabase } from './db.js';
+import { getDatabase, saveDatabase } from './db.ts';
 
 export const apiRouter = Router();
 
@@ -28,8 +28,9 @@ async function executeQuery<T = any>(sql: string, params: any[] = []): Promise<T
 // -------------------------------------------------------------
 apiRouter.get('/productos', async (req: Request, res: Response) => {
   try {
-    const db = await getDatabase();
-    // Query products
+    const todos = req.query.todos === 'true';
+    const whereClause = todos ? '' : 'WHERE p.activo = 1';
+
     const productos = await executeQuery(`
       SELECT p.*,
         (
@@ -39,7 +40,7 @@ apiRouter.get('/productos', async (req: Request, res: Response) => {
           WHERE r.producto_id = p.id
         ) as costo_produccion_unitario
       FROM productos p
-      WHERE p.activo = 1
+      ${whereClause}
       ORDER BY p.id ASC
     `);
 
@@ -56,6 +57,7 @@ apiRouter.get('/productos', async (req: Request, res: Response) => {
       precio: Number(p.precio),
       costo_produccion_unitario: Number(Number(p.costo_produccion_unitario).toFixed(3)),
       stock_disponible: Number(p.stock_disponible),
+      activo: Number(p.activo ?? 1),
       receta: recetas.filter(r => r.producto_id === p.id).map(r => ({
         ...r,
         cantidad: Number(r.cantidad),
@@ -72,16 +74,24 @@ apiRouter.get('/productos', async (req: Request, res: Response) => {
 
 apiRouter.post('/productos', async (req: Request, res: Response) => {
   try {
-    const { nombre, descripcion, precio, categoria, imagen_url, stock_disponible, ingredientes } = req.body;
+    const { nombre, descripcion, precio, categoria, imagen_url, stock_disponible, activo, ingredientes } = req.body;
     if (!nombre || precio === undefined) {
       return res.status(400).json({ error: 'Nombre y precio son requeridos' });
     }
 
     const db = await getDatabase();
     db.run(
-      `INSERT INTO productos (nombre, descripcion, precio, categoria, imagen_url, stock_disponible)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [nombre, descripcion || '', Number(precio), categoria || 'Pan Rústico', imagen_url || '', Number(stock_disponible || 0)]
+      `INSERT INTO productos (nombre, descripcion, precio, categoria, imagen_url, stock_disponible, activo)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        nombre.trim(),
+        descripcion ? descripcion.trim() : '',
+        Number(precio),
+        categoria || 'Pan Rústico',
+        imagen_url || '/images/pan_estrella_1.jpg',
+        Number(stock_disponible !== undefined ? stock_disponible : 25),
+        activo !== undefined ? Number(activo) : 1
+      ]
     );
 
     const idRes = db.exec('SELECT last_insert_rowid() as id');
@@ -100,8 +110,9 @@ apiRouter.post('/productos', async (req: Request, res: Response) => {
     }
 
     saveDatabase();
-    res.status(201).json({ id: newId, message: 'Producto creado exitosamente' });
+    res.status(201).json({ id: newId, success: true, message: 'Producto creado exitosamente' });
   } catch (error: any) {
+    console.error('Error al crear producto:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -109,14 +120,29 @@ apiRouter.post('/productos', async (req: Request, res: Response) => {
 apiRouter.put('/productos/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { nombre, descripcion, precio, categoria, imagen_url, stock_disponible, ingredientes } = req.body;
+    const { nombre, descripcion, precio, categoria, imagen_url, stock_disponible, activo, ingredientes } = req.body;
     const db = await getDatabase();
+
+    const existing = await executeQuery('SELECT * FROM productos WHERE id = ?', [Number(id)]);
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Producto no encontrado' });
+    }
+    const curr = existing[0];
 
     db.run(
       `UPDATE productos 
-       SET nombre = ?, descripcion = ?, precio = ?, categoria = ?, imagen_url = ?, stock_disponible = ?
+       SET nombre = ?, descripcion = ?, precio = ?, categoria = ?, imagen_url = ?, stock_disponible = ?, activo = ?
        WHERE id = ?`,
-      [nombre, descripcion, Number(precio), categoria, imagen_url, Number(stock_disponible), Number(id)]
+      [
+        nombre !== undefined ? String(nombre).trim() : curr.nombre,
+        descripcion !== undefined ? String(descripcion).trim() : (curr.descripcion || ''),
+        precio !== undefined ? Number(precio) : curr.precio,
+        categoria !== undefined ? categoria : curr.categoria,
+        imagen_url !== undefined ? imagen_url : curr.imagen_url,
+        stock_disponible !== undefined ? Number(stock_disponible) : curr.stock_disponible,
+        activo !== undefined ? Number(activo) : curr.activo,
+        Number(id)
+      ]
     );
 
     // Update recipes if provided
@@ -133,8 +159,9 @@ apiRouter.put('/productos/:id', async (req: Request, res: Response) => {
     }
 
     saveDatabase();
-    res.json({ message: 'Producto actualizado exitosamente' });
+    res.json({ success: true, message: 'Producto actualizado exitosamente' });
   } catch (error: any) {
+    console.error('Error al actualizar producto:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -142,11 +169,20 @@ apiRouter.put('/productos/:id', async (req: Request, res: Response) => {
 apiRouter.delete('/productos/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const permanente = req.query.permanente === 'true';
     const db = await getDatabase();
-    db.run('UPDATE productos SET activo = 0 WHERE id = ?', [Number(id)]);
+
+    if (permanente) {
+      db.run('DELETE FROM recetas WHERE producto_id = ?', [Number(id)]);
+      db.run('DELETE FROM productos WHERE id = ?', [Number(id)]);
+    } else {
+      db.run('UPDATE productos SET activo = 0 WHERE id = ?', [Number(id)]);
+    }
+
     saveDatabase();
-    res.json({ message: 'Producto desactivado' });
+    res.json({ success: true, message: permanente ? 'Producto eliminado permanentemente' : 'Producto desactivado' });
   } catch (error: any) {
+    console.error('Error al eliminar producto:', error);
     res.status(500).json({ error: error.message });
   }
 });

@@ -20,8 +20,15 @@ export default function App() {
   const fetchGlobalData = async () => {
     try {
       setLoadError(null);
+      // Clean up any stale mock localStorage from previous turns to avoid cross-browser drift
+      try {
+        localStorage.removeItem('estrella_productos');
+        localStorage.removeItem('estrella_insumos');
+        localStorage.removeItem('estrella_ventas');
+      } catch {}
+
       const [prods, ins] = await Promise.all([
-        api.getProductos(),
+        api.getProductos(true),
         api.getInsumos(),
       ]);
       setProductos(prods);

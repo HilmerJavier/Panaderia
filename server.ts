@@ -2,8 +2,8 @@ import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { apiRouter } from './src/server/routes.js';
-import { getDatabase } from './src/server/db.js';
+import { apiRouter } from './src/server/routes.ts';
+import { getDatabase } from './src/server/db.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

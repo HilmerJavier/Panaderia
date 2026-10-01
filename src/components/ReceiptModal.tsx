@@ -41,9 +41,15 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ ticket, onClose }) =
           {/* Header with Logo */}
           <div className="text-center border-b border-stone-200 pb-3 flex flex-col items-center">
             <img
-              src="/src/assets/images/logo_estrella.png"
+              src="/images/logo_estrella.png"
               onError={(e) => {
-                (e.target as HTMLImageElement).src = 'https://www.kroman360.com/imagenes/logoestrella.png';
+                const target = e.target as HTMLImageElement;
+                if (!target.dataset.tried) {
+                  target.dataset.tried = '1';
+                  target.src = '/src/assets/images/logo_estrella.png';
+                } else {
+                  target.src = 'https://www.kroman360.com/imagenes/logoestrella.png';
+                }
               }}
               alt="La Estrella del Socorro"
               className="h-14 w-auto object-contain mb-1"

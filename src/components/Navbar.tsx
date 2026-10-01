@@ -36,9 +36,15 @@ export const Navbar: React.FC<NavbarProps> = ({ currentModule, onChangeModule, c
           title="Panadería La Estrella del Socorro"
         >
           <img
-            src="/src/assets/images/logo_estrella.png"
+            src="/images/logo_estrella.png"
             onError={(e) => {
-              (e.target as HTMLImageElement).src = 'https://www.kroman360.com/imagenes/logoestrella.png';
+              const target = e.target as HTMLImageElement;
+              if (!target.dataset.tried) {
+                target.dataset.tried = '1';
+                target.src = '/src/assets/images/logo_estrella.png';
+              } else {
+                target.src = 'https://www.kroman360.com/imagenes/logoestrella.png';
+              }
             }}
             alt="Logo Panadería La Estrella del Socorro"
             className="w-[145px] sm:w-[175px] md:w-[195px] h-[50px] sm:h-[60px] md:h-[66px] object-contain transition-transform duration-150 hover:scale-[1.02]"

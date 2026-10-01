@@ -36,6 +36,7 @@ export const POSModule: React.FC<POSModuleProps> = ({
   // Filtered products
   const filteredProducts = useMemo(() => {
     return productos.filter(p => {
+      if (p.activo === 0) return false;
       const matchCat = selectedCategory === 'Todos' || p.categoria === selectedCategory;
       const matchSearch = p.nombre.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           p.descripcion.toLowerCase().includes(searchQuery.toLowerCase());
@@ -213,12 +214,21 @@ export const POSModule: React.FC<POSModuleProps> = ({
                   <div className="relative aspect-4/3 w-full bg-stone-100 overflow-hidden">
                     {product.imagen_url ? (
                       <img
-                        src={product.imagen_url}
+                        src={product.imagen_url.startsWith('/src/assets/images/') ? product.imagen_url.replace('/src/assets/images/', '/images/') : product.imagen_url}
                         alt={product.nombre}
+                        loading="lazy"
                         referrerPolicy="no-referrer"
                         className="w-full h-full object-cover group-hover:scale-106 transition-transform duration-300"
                         onError={(e) => {
-                          (e.target as HTMLElement).style.display = 'none';
+                          const target = e.target as HTMLImageElement;
+                          if (!target.dataset.tried) {
+                            target.dataset.tried = '1';
+                            if (target.src.includes('/images/')) {
+                              target.src = target.src.replace('/images/', '/src/assets/images/');
+                              return;
+                            }
+                          }
+                          target.style.display = 'none';
                         }}
                       />
                     ) : (
